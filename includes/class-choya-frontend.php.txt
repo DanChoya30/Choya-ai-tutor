@@ -1,0 +1,94 @@
+<?php
+/**
+ * Choya AI Frontend Functionality
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class Choya_AI_Frontend {
+    
+    public function __construct() {
+        add_action('wp_enqueue_scripts', array($this, 'enqueue_frontend_scripts'));
+        add_action('wp_footer', array($this, 'render_chat_widget'));
+        add_action('wp_head', array($this, 'add_frontend_styles'));
+    }
+    
+    public function enqueue_frontend_scripts() {
+        if (!$this->is_chat_enabled()) {
+            return;
+        }
+        
+        // Enqueue main styles
+        wp_enqueue_style('choya-ai', CHOYA_AI_PLUGIN_URL . 'assets/css/choya-ai.css', array(), CHOYA_AI_VERSION);
+        
+        // Enqueue fonts
+        wp_enqueue_style('choya-ai-fonts', 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap', array(), CHOYA_AI_VERSION);
+        
+        // Enqueue main script
+        wp_enqueue_script('choya-ai', CHOYA_AI_PLUGIN_URL . 'assets/js/choya-ai.js', array('jquery'), CHOYA_AI_VERSION, true);
+        
+        // Localize script with settings
+        wp_localize_script('choya-ai', 'choya_frontend', array(
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('choya_frontend_nonce'),
+            'settings' => $this->get_chat_settings(),
+            'is_pro' => get_option('choya_ai_is_pro', '0'),
+            'strings' => array(
+                'typing' => __('Typing...', 'choya-ai'),
+                'send_message' => __('Send Message', 'choya-ai'),
+                'placeholder' => __('Type your message...', 'choya-ai'),
+                'welcome' => get_option('choya_ai_welcome_message', 'Hi! I\'m Choya, your AI assistant.')
+            )
+        ));
+        
+        // Enqueue Pro features if available
+        if ($this->is_pro_enabled()) {
+            wp_enqueue_script('choya-pro', CHOYA_AI_PLUGIN_URL . 'assets/js/choya-pro.js', array('jquery', 'choya-ai'), CHOYA_AI_VERSION, true);
+        }
+    }
+    
+    public function render_chat_widget() {
+        if (!$this->is_chat_enabled()) {
+            return;
+        }
+        
+        $settings = $this->get_chat_settings();
+        $is_pro = $this->is_pro_enabled();
+        
+        include CHOYA_AI_PLUGIN_DIR . 'templates/chat-widget.php';
+    }
+    
+    public function add_frontend_styles() {
+        if (!$this->is_chat_enabled()) {
+            return;
+        }
+        
+        $custom_css = get_option('choya_ai_custom_css', '');
+        
+        if (!empty($custom_css)) {
+            echo '<style type="text/css">' . $custom_css . '</style>';
+        }
+    }
+    
+    private function is_chat_enabled() {
+        return get_option('choya_ai_enable_chat', '1') === '1';
+    }
+    
+    private function is_pro_enabled() {
+        return get_option('choya_ai_is_pro', '0') === '1' && 
+               get_option('choya_ai_license_status', 'inactive') === 'active';
+    }
+    
+    private function get_chat_settings() {
+        return array(
+            'brand_name' => get_option('choya_ai_brand_name', 'Choya AI'),
+            'welcome_message' => get_option('choya_ai_welcome_message', 'Hi! I\'m Choya, your AI assistant. How can I help you today?'),
+            'chat_position' => get_option('choya_ai_chat_position', 'bottom-right'),
+            'enable_context' => get_option('choya_ai_enable_context', '1'),
+            'max_tokens' => get_option('choya_ai_max_tokens', 500),
+            'temperature' => get_option('choya_ai_temperature', 0.7)
+        );
+    }
+}

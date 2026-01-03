@@ -1,0 +1,702 @@
+<?php
+/**
+ * Choya AI API Handler
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class Choya_AI_API {
+    
+    public function __construct() {
+        add_action('wp_ajax_choya_chat', array($this, 'handle_chat_request'));
+        add_action('wp_ajax_nopriv_choya_chat', array($this, 'handle_chat_request'));
+        add_action('wp_ajax_choya_activate_license', array($this, 'activate_license'));
+        add_action('wp_ajax_choya_deactivate_license', array($this, 'deactivate_license'));
+        add_action('wp_ajax_choya_track_event', array($this, 'track_event'));
+        add_action('wp_ajax_choya_upload_knowledge_file', array($this, 'upload_knowledge_file'));
+        add_action('wp_ajax_choya_export_analytics', array($this, 'export_analytics'));
+        add_action('wp_ajax_choya_get_analytics_data', array($this, 'get_analytics_data'));
+        add_action('wp_ajax_choya_capture_lead', array($this, 'capture_lead'));
+    }
+    
+    /**
+     * Handle chat requests
+     */
+    public function handle_chat_request() {
+        check_ajax_referer('choya_frontend_nonce', 'nonce');
+        
+        $user_message = sanitize_text_field($_POST['message']);
+        $conversation_history = isset($_POST['history']) ? json_decode(stripslashes($_POST['history']), true) : array();
+        $session_id = !empty($_POST['session_id']) ? sanitize_text_field($_POST['session_id']) : wp_generate_password(12, false);
+        
+        // Validate input
+        if (empty($user_message)) {
+            wp_send_json_error(array('message' => 'Message cannot be empty'));
+        }
+        
+        if (strlen($user_message) > 1000) {
+            wp_send_json_error(array('message' => 'Message too long. Please keep it under 1000 characters'));
+        }
+        
+        // Save conversation to database
+        $this->save_conversation($session_id, $user_message, 'user');
+        
+        // Get AI response
+        $response = $this->get_ai_response($user_message, $conversation_history);
+        
+        if ($response['success']) {
+            $this->save_conversation($session_id, $response['message'], 'bot');
+            
+            wp_send_json_success(array(
+                'response' => $response['message'],
+                'session_id' => $session_id,
+                'timestamp' => current_time('mysql')
+            ));
+        } else {
+            wp_send_json_error(array(
+                'message' => $response['error'],
+                'session_id' => $session_id
+            ));
+        }
+    }
+    
+    /**
+     * Activate Pro license
+     */
+    public function activate_license() {
+        check_ajax_referer('choya_admin_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized'));
+        }
+        
+        $email = sanitize_email($_POST['license_email']);
+        $license_key = sanitize_text_field($_POST['license_key']);
+        
+        if (empty($email) || empty($license_key)) {
+            wp_send_json_error(array('message' => 'Please provide both email and license key'));
+        }
+        
+        // Validate email format
+        if (!is_email($email)) {
+            wp_send_json_error(array('message' => 'Please enter a valid email address'));
+        }
+        
+        // Validate license with remote server
+        $validation_result = $this->validate_license_remote($email, $license_key);
+        
+        if ($validation_result['success']) {
+            // Activate license
+            update_option('choya_ai_is_pro', '1');
+            update_option('choya_ai_license_key', $license_key);
+            update_option('choya_ai_license_email', $email);
+            update_option('choya_ai_license_status', 'active');
+            update_option('choya_ai_license_expiry', $validation_result['expiry_date']);
+            update_option('choya_ai_license_activated', current_time('mysql'));
+            
+            // Create license metadata
+            update_option('choya_ai_license_metadata', array(
+                'activation_date' => current_time('mysql'),
+                'expiry_date' => $validation_result['expiry_date'],
+                'domain' => get_site_url(),
+                'version' => CHOYA_AI_VERSION
+            ));
+            
+            wp_send_json_success(array(
+                'message' => '🎉 Pro license activated successfully!',
+                'expiry_date' => $validation_result['expiry_date']
+            ));
+        } else {
+            wp_send_json_error(array('message' => $validation_result['error']));
+        }
+    }
+    
+    /**
+     * Deactivate license
+     */
+    public function deactivate_license() {
+        check_ajax_referer('choya_admin_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized'));
+        }
+        
+        // Clear license data
+        update_option('choya_ai_is_pro', '0');
+        update_option('choya_ai_license_key', '');
+        update_option('choya_ai_license_email', '');
+        update_option('choya_ai_license_status', 'inactive');
+        update_option('choya_ai_license_expiry', '');
+        update_option('choya_ai_license_activated', '');
+        update_option('choya_ai_license_metadata', '');
+        
+        wp_send_json_success(array('message' => 'License deactivated successfully'));
+    }
+    
+    /**
+     * Track analytics events
+     */
+    public function track_event() {
+        check_ajax_referer('choya_frontend_nonce', 'nonce');
+        
+        $event = sanitize_text_field($_POST['event']);
+        $data = json_decode(stripslashes($_POST['data']), true);
+        
+        // Validate event
+        $allowed_events = array(
+            'chat_opened', 'chat_closed', 'message_sent', 'message_responded',
+            'widget_clicked', 'pro_feature_used', 'shortcode_viewed',
+            'page_view', 'exit_intent', 'smart_trigger_shown'
+        );
+        
+        if (!in_array($event, $allowed_events)) {
+            wp_send_json_error(array('message' => 'Invalid event type'));
+        }
+        
+        // Save event to analytics
+        $this->save_analytics_event($event, $data);
+        
+        wp_send_json_success(array('message' => 'Event tracked'));
+    }
+    
+    /**
+     * Upload knowledge base file
+     */
+    public function upload_knowledge_file() {
+        check_ajax_referer('choya_admin_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized'));
+        }
+        
+        if (!isset($_FILES['file'])) {
+            wp_send_json_error(array('message' => 'No file uploaded'));
+        }
+        
+        $file = $_FILES['file'];
+        $upload_dir = wp_upload_dir();
+        $target_dir = $upload_dir['basedir'] . '/choya-ai/knowledge-base/';
+        
+        // Create directory if it doesn't exist
+        if (!file_exists($target_dir)) {
+            wp_mkdir_p($target_dir);
+        }
+        
+        // Validate file
+        $allowed_types = array('pdf', 'txt', 'doc', 'docx');
+        $file_extension = pathinfo($file['name'], PATHINFO_EXTENSION);
+        
+        if (!in_array(strtolower($file_extension), $allowed_types)) {
+            wp_send_json_error(array('message' => 'Invalid file type. Please upload PDF, TXT, DOC, or DOCX files'));
+        }
+        
+        if ($file['size'] > 10 * 1024 * 1024) { // 10MB limit
+            wp_send_json_error(array('message' => 'File too large. Maximum size is 10MB'));
+        }
+        
+        // Generate unique filename
+        $filename = uniqid() . '-' . sanitize_file_name($file['name']);
+        $target_path = $target_dir . $filename;
+        
+        // Move uploaded file
+        if (move_uploaded_file($file['tmp_name'], $target_path)) {
+            // Process file content (simplified for demo)
+            $content = $this->extract_file_content($target_path, $file_extension);
+            
+            // Save to knowledge base
+            $this->save_knowledge_entry(array(
+                'title' => sanitize_text_field(pathinfo($file['name'], PATHINFO_FILENAME)),
+                'content' => $content,
+                'file_path' => $target_dir . $filename,
+                'file_type' => $file_extension,
+                'uploaded_date' => current_time('mysql')
+            ));
+            
+            wp_send_json_success(array(
+                'message' => 'File uploaded successfully',
+                'file_id' => $filename
+            ));
+        } else {
+            wp_send_json_error(array('message' => 'Failed to upload file'));
+        }
+    }
+    
+    /**
+     * Export analytics data
+     */
+    public function export_analytics() {
+        check_ajax_referer('choya_admin_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+        
+        $format = sanitize_text_field($_GET['format'] ?? 'csv');
+        $date_from = sanitize_text_field($_GET['date_from'] ?? '');
+        $date_to = sanitize_text_field($_GET['date_to'] ?? '');
+        
+        if (empty($date_from) || empty($date_to)) {
+            wp_die('Please specify date range');
+        }
+        
+        $data = $this->get_analytics_export_data($date_from, $date_to);
+        
+        if ($format === 'csv') {
+            $this->export_csv($data);
+        } elseif ($format === 'json') {
+            $this->export_json($data);
+        }
+    }
+    
+    /**
+     * Get analytics data for dashboard
+     */
+    public function get_analytics_data() {
+        check_ajax_referer('choya_admin_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized'));
+        }
+        
+        $range = sanitize_text_field($_POST['range'] ?? '7days');
+        
+        $data = $this->calculate_analytics($range);
+        
+        wp_send_json_success($data);
+    }
+    
+    /**
+     * Capture lead from Pro features
+     */
+    public function capture_lead() {
+        check_ajax_referer('choya_frontend_nonce', 'nonce');
+        
+        $name = sanitize_text_field($_POST['name']);
+        $email = sanitize_email($_POST['email']);
+        $session_id = sanitize_text_field($_POST['session_id'] ?? '');
+        
+        if (empty($name) || empty($email)) {
+            wp_send_json_error(array('message' => 'Please fill in all fields'));
+        }
+        
+        if (!is_email($email)) {
+            wp_send_json_error(array('message' => 'Please enter a valid email address'));
+        }
+        
+        // Save lead to database
+        $this->save_lead(array(
+            'name' => $name,
+            'email' => $email,
+            'session_id' => $session_id,
+            'page_url' => sanitize_text_field($_POST['page_url'] ?? ''),
+            'captured_at' => current_time('mysql')
+        ));
+        
+        wp_send_json_success(array('message' => 'Thank you! We\'ll be in touch soon.'));
+    }
+    
+    /**
+     * Helper methods
+     */
+    private function save_conversation($session_id, $message, $sender) {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'choya_ai_conversations';
+        
+        $wpdb->insert(
+            $table_name,
+            array(
+                'user_id' => get_current_user_id(),
+                'session_id' => $session_id,
+                'message' => $message,
+                'sender' => $sender
+            ),
+            array('%d', '%s', '%s', '%s')
+        );
+    }
+    
+    private function get_ai_response($user_message, $conversation_history) {
+        $api_key = get_option('choya_ai_openrouter_api_key');
+        
+        if (empty($api_key)) {
+            return array(
+                'success' => false,
+                'error' => 'OpenRouter API key not configured. Please contact the site administrator.'
+            );
+        }
+        
+        // Prepare conversation history
+        $messages = array();
+        
+        // Add system message
+        $system_message = "You are Choya, a helpful AI assistant. Your goal is to assist users with their questions and provide informative, engaging responses. Be friendly and professional.";
+        
+        // Add page context if available
+        if (get_option('choya_ai_enable_context', '1') === '1') {
+            $page_context = $this->get_page_context();
+            if (!empty($page_context)) {
+                $system_message .= "\n\nCurrent page context: " . $page_context;
+            }
+        }
+        
+        $messages[] = array('role' => 'system', 'content' => $system_message);
+        
+        // Add conversation history
+        foreach ($conversation_history as $message) {
+            $messages[] = array(
+                'role' => $message['sender'] == 'user' ? 'user' : 'assistant',
+                'content' => $message['message']
+            );
+        }
+        
+        // Add current user message
+        $messages[] = array('role' => 'user', 'content' => $user_message);
+        
+        // Prepare API request
+        $model = get_option('choya_ai_openrouter_model', 'anthropic/claude-3-sonnet');
+        $max_tokens = get_option('choya_ai_max_tokens', 500);
+        $temperature = get_option('choya_ai_temperature', 0.7);
+        
+        $api_data = array(
+            'model' => $model,
+            'messages' => $messages,
+            'max_tokens' => $max_tokens,
+            'temperature' => $temperature,
+            'stream' => false
+        );
+        
+        // Make API request
+        $response = wp_remote_post('https://openrouter.ai/api/v1/chat/completions', array(
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . $api_key,
+                'HTTP-Referer' => get_site_url(),
+                'X-Title' => get_bloginfo('name')
+            ),
+            'body' => json_encode($api_data),
+            'timeout' => 30,
+            'sslverify' => true
+        ));
+        
+        if (is_wp_error($response)) {
+            return array(
+                'success' => false,
+                'error' => 'Failed to connect to OpenRouter API: ' . $response->get_error_message()
+            );
+        }
+        
+        $response_code = wp_remote_retrieve_response_code($response);
+        $response_body = wp_remote_retrieve_body($response);
+        
+        if ($response_code !== 200) {
+            return array(
+                'success' => false,
+                'error' => 'OpenRouter API error: HTTP ' . $response_code
+            );
+        }
+        
+        $data = json_decode($response_body, true);
+        
+        if (isset($data['choices'][0]['message']['content'])) {
+            return array(
+                'success' => true,
+                'message' => $data['choices'][0]['message']['content']
+            );
+        } else {
+            return array(
+                'success' => false,
+                'error' => 'Invalid response from OpenRouter API'
+            );
+        }
+    }
+    
+    private function validate_license_remote($email, $license_key) {
+        // This would connect to your licensing server
+        $api_url = 'https://choya.ai/api/v1/validate-license';
+        
+        $response = wp_remote_post($api_url, array(
+            'body' => array(
+                'email' => $email,
+                'license_key' => $license_key,
+                'domain' => get_site_url(),
+                'version' => CHOYA_AI_VERSION
+            ),
+            'timeout' => 15
+        ));
+        
+        if (is_wp_error($response)) {
+            return array(
+                'success' => false,
+                'error' => 'Could not connect to licensing server: ' . $response->get_error_message()
+            );
+        }
+        
+        $response_code = wp_remote_retrieve_response_code($response);
+        $response_body = wp_remote_retrieve_body($response);
+        
+        if ($response_code === 200) {
+            $data = json_decode($response_body, true);
+            if ($data['valid']) {
+                return array(
+                    'success' => true,
+                    'expiry_date' => $data['expiry_date']
+                );
+            } else {
+                return array(
+                    'success' => false,
+                    'error' => $data['error'] ?: 'Invalid license key'
+                );
+            }
+        }
+        
+        return array(
+            'success' => false,
+            'error' => 'License validation service unavailable'
+        );
+    }
+    
+    private function save_analytics_event($event, $data) {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'choya_ai_analytics';
+        
+        // Create table if it doesn't exist
+        $charset_collate = $wpdb->get_charset_collate();
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            event_type varchar(100) NOT NULL,
+            event_data longtext,
+            user_id bigint(20) DEFAULT 0,
+            session_id varchar(255) DEFAULT '',
+            page_url varchar(500) DEFAULT '',
+            timestamp datetime DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            INDEX event_idx (event_type),
+            INDEX timestamp_idx (timestamp)
+        ) $charset_collate;";
+        
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+        
+        // Insert event
+        $wpdb->insert(
+            $table_name,
+            array(
+                'event_type' => $event,
+                'event_data' => json_encode($data),
+                'user_id' => get_current_user_id(),
+                'session_id' => $data['session_id'] ?? '',
+                'page_url' => $data['page_url'] ?? '',
+                'timestamp' => current_time('mysql')
+            ),
+            array('%s', '%s', '%d', '%s', '%s', '%s')
+        );
+    }
+    
+    private function extract_file_content($file_path, $extension) {
+        $content = '';
+        
+        switch (strtolower($extension)) {
+            case 'txt':
+                $content = file_get_contents($file_path);
+                break;
+            case 'pdf':
+                // Would use a PDF library to extract text
+                $content = 'PDF content extraction would be implemented here';
+                break;
+            case 'doc':
+            case 'docx':
+                // Would use appropriate libraries to extract text
+                $content = 'Document content extraction would be implemented here';
+                break;
+        }
+        
+        return substr($content, 0, 1000); // Limit content length
+    }
+    
+    private function save_knowledge_entry($data) {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'choya_ai_knowledge_base';
+        
+        // Create table if it doesn't exist
+        $charset_collate = $wpdb->get_charset_collate();
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            title varchar(255) NOT NULL,
+            content longtext,
+            file_path varchar(500),
+            file_type varchar(10),
+            uploaded_date datetime DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id)
+        ) $charset_collate;";
+        
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+        
+        // Insert knowledge entry
+        $wpdb->insert(
+            $table_name,
+            $data,
+            array('%s', '%s', '%s', '%s', '%s')
+        );
+    }
+    
+    private function save_lead($data) {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'choya_ai_leads';
+        
+        // Create table if it doesn't exist
+        $charset_collate = $wpdb->get_charset_collate();
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            name varchar(255) NOT NULL,
+            email varchar(255) NOT NULL,
+            session_id varchar(255),
+            page_url varchar(500),
+            captured_at datetime DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            INDEX email_idx (email)
+        ) $charset_collate;";
+        
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+        
+        // Insert lead
+        $wpdb->insert(
+            $table_name,
+            $data,
+            array('%s', '%s', '%s', '%s', '%s')
+        );
+    }
+    
+    private function get_analytics_export_data($date_from, $date_to) {
+        global $wpdb;
+        
+        $conversations_table = $wpdb->prefix . 'choya_ai_conversations';
+        $analytics_table = $wpdb->prefix . 'choya_ai_analytics';
+        
+        $data = array(
+            'conversations' => array(),
+            'analytics' => array(),
+            'summary' => array()
+        );
+        
+        // Get conversations
+        $conversations = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM $conversations_table WHERE DATE(timestamp) BETWEEN %s AND %s ORDER BY timestamp DESC",
+            $date_from, $date_to
+        ));
+        
+        $data['conversations'] = $conversations;
+        
+        // Get analytics events
+        $analytics = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM $analytics_table WHERE DATE(timestamp) BETWEEN %s AND %s ORDER BY timestamp DESC",
+            $date_from, $date_to
+        ));
+        
+        $data['analytics'] = $analytics;
+        
+        // Get summary stats
+        $summary = array(
+            'total_conversations' => count(array_unique(array_column($conversations, 'session_id'))),
+            'total_messages' => count($conversations),
+            'total_events' => count($analytics),
+            'unique_users' => count(array_unique(array_column($conversations, 'user_id'))),
+            'date_range' => "$date_from to $date_to"
+        );
+        
+        $data['summary'] = $summary;
+        
+        return $data;
+    }
+    
+    private function calculate_analytics($range) {
+        global $wpdb;
+        
+        $conversations_table = $wpdb->prefix . 'choya_ai_conversations';
+        $analytics_table = $wpdb->prefix . 'choya_ai_analytics';
+        
+        // Calculate date range
+        $days = 7; // default
+        if ($range === '30days') $days = 30;
+        elseif ($range === '90days') $days = 90;
+        
+        $start_date = date('Y-m-d', strtotime("-$days days"));
+        
+        // Basic metrics
+        $total_conversations = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(DISTINCT session_id) FROM $conversations_table WHERE DATE(timestamp) >= %s",
+            $start_date
+        ));
+        
+        $total_messages = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $conversations_table WHERE DATE(timestamp) >= %s",
+            $start_date
+        ));
+        
+        $total_users = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(DISTINCT user_id) FROM $conversations_table WHERE DATE(timestamp) >= %s AND user_id > 0",
+            $start_date
+        ));
+        
+        // Daily breakdown
+        $daily_stats = $wpdb->get_results($wpdb->prepare(
+            "SELECT DATE(timestamp) as date, 
+                    COUNT(DISTINCT session_id) as conversations,
+                    COUNT(*) as messages,
+                    COUNT(DISTINCT user_id) as users
+             FROM $conversations_table 
+             WHERE DATE(timestamp) >= %s 
+             GROUP BY DATE(timestamp) 
+             ORDER BY date DESC",
+            $start_date
+        ));
+        
+        // Top events
+        $top_events = array();
+        if ($wpdb->get_var("SHOW TABLES LIKE '$analytics_table'") === $analytics_table) {
+            $top_events = $wpdb->get_results($wpdb->prepare(
+                "SELECT event_type, COUNT(*) as count
+                 FROM $analytics_table 
+                 WHERE DATE(timestamp) >= %s 
+                 GROUP BY event_type 
+                 ORDER BY count DESC 
+                 LIMIT 10",
+                $start_date
+            ));
+        }
+        
+        return array(
+            'period' => $range,
+            'total_conversations' => $total_conversations ?: 0,
+            'total_messages' => $total_messages ?: 0,
+            'total_users' => $total_users ?: 0,
+            'avg_conversations_per_day' => $total_conversations ? round($total_conversations / $days) : 0,
+            'daily_stats' => $daily_stats,
+            'top_events' => $top_events
+        );
+    }
+    
+    private function get_page_context() {
+        $context = '';
+        
+        if (is_single() || is_page()) {
+            global $post;
+            if ($post) {
+                $content = wp_strip_all_tags($post->post_content);
+                $content = substr($content, 0, 300);
+                $context .= "Page content: " . $content . ". ";
+                $context .= "Page title: " . $post->post_title . ". ";
+            }
+        } elseif (is_home()) {
+            $context = "This is the homepage.";
+        }
+        
+        return trim($context);
+    }
+}

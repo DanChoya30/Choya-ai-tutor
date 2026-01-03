@@ -1,0 +1,54 @@
+<?php
+/**
+ * Admin functionality for Choya AI
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class Choya_AI_Admin {
+    
+    public function __construct() {
+        add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
+        add_action('admin_init', array($this, 'check_license_status'));
+    }
+    
+    public function enqueue_admin_scripts($hook) {
+        if ($hook !== 'toplevel_page_choya-ai-settings') {
+            return;
+        }
+        
+        wp_enqueue_style('choya-admin', CHOYA_AI_PLUGIN_URL . 'assets/css/choya-admin.css', array(), CHOYA_AI_VERSION);
+        wp_enqueue_script('choya-admin', CHOYA_AI_PLUGIN_URL . 'assets/js/choya-admin.js', array('jquery'), CHOYA_AI_VERSION, true);
+        
+        wp_localize_script('choya-admin', 'choya_admin', array(
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('choya_admin_nonce')
+        ));
+    }
+    
+    public function check_license_status() {
+        $is_pro = get_option('choya_ai_is_pro', '0');
+        $license_status = get_option('choya_ai_license_status', 'inactive');
+        $license_expiry = get_option('choya_ai_license_expiry', '');
+        
+        if ($is_pro === '1' && $license_status === 'active' && !empty($license_expiry)) {
+            $expiry_date = new DateTime($license_expiry);
+            $today = new DateTime();
+            
+            if ($today > $expiry_date) {
+                update_option('choya_ai_is_pro', '0');
+                update_option('choya_ai_license_status', 'expired');
+                
+                add_action('admin_notices', array($this, 'license_expired_notice'));
+            }
+        }
+    }
+    
+    public function license_expired_notice() {
+        echo '<div class="notice notice-warning is-dismissible">';
+        echo '<p><strong>⚠️ Choya AI Pro License Expired!</strong> Your Pro features have been disabled. <a href="' . admin_url('admin.php?page=choya-ai-settings&tab=pro') . '">Renew your license</a> to continue using Pro features.</p>';
+        echo '</div>';
+    }
+}

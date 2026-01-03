@@ -1,0 +1,510 @@
+<?php
+/**
+ * Choya AI Pro Features
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class Choya_AI_Pro_Features {
+    
+    public function __construct() {
+        if ($this->is_pro_enabled()) {
+            $this->init_pro_features();
+        }
+    }
+    
+    private function is_pro_enabled() {
+        return get_option('choya_ai_is_pro', '0') === '1' && 
+               get_option('choya_ai_license_status', 'inactive') === 'active';
+    }
+    
+    private function init_pro_features() {
+        // Smart triggers
+        add_action('wp_footer', array($this, 'render_smart_triggers'));
+        
+        // Multi-language support
+        add_action('wp_enqueue_scripts', array($this, 'enqueue_translation_scripts'));
+        
+        // Advanced analytics
+        add_action('wp_ajax_choya_track_event', array($this, 'track_event'));
+        add_action('wp_ajax_nopriv_choya_track_event', array($this, 'track_event'));
+        
+        // Content enhancement
+        add_filter('the_content', array($this, 'enhance_content'));
+        
+        // E-commerce integration hooks
+        add_action('woocommerce_single_product_summary', array($this, 'add_product_ai_assistant'), 35);
+        
+        // Lead generation
+        add_action('wp_footer', array($this, 'render_lead_capture'));
+        
+        // Advanced customization
+        add_action('admin_menu', array($this, 'add_pro_settings_page'));
+        
+        // Scheduled tasks
+        add_action('choya_ai_hourly_event', array($this, 'hourly_maintenance'));
+        
+        if (!wp_next_scheduled('choya_ai_hourly_event')) {
+            wp_schedule_event(time(), 'hourly', 'choya_ai_hourly_event');
+        }
+    }
+    
+    public function render_smart_triggers() {
+        if (!$this->is_pro_enabled()) return;
+        
+        ?>
+        <script>
+        // Smart triggers functionality
+        window.choyaProSmartTriggers = {
+            init: function() {
+                this.initBehavioralTriggers();
+                this.initExitIntent();
+                this.initTimeBasedTriggers();
+            },
+            
+            initBehavioralTriggers: function() {
+                let inactiveTime = 0;
+                const maxInactiveTime = 10000; // 10 seconds
+                
+                const checkActivity = () => {
+                    inactiveTime += 1000;
+                    
+                    if (inactiveTime >= maxInactiveTime) {
+                        this.showConfusionTrigger();
+                    }
+                };
+                
+                // Reset timer on user activity
+                $(document).on('mousemove keypress scroll', () => {
+                    inactiveTime = 0;
+                });
+                
+                setInterval(checkActivity, 1000);
+            },
+            
+            initExitIntent: function() {
+                $(document).on('mouseleave', (e) => {
+                    if (e.clientY <= 0) {
+                        this.showExitIntentTrigger();
+                    }
+                });
+            },
+            
+            initTimeBasedTriggers: function() {
+                setTimeout(() => {
+                    this.showTimeBasedTrigger();
+                }, 30000); // 5 minutes
+            },
+            
+            showConfusionTrigger: function() {
+                this.showSmartNotification("🤔 Having trouble understanding this content? I can help explain it in simpler terms!");
+            },
+            
+            showExitIntentTrigger: function() {
+                this.showSmartNotification("👋 Wait! Before you go, can I help you find what you're looking for?");
+            },
+            
+            showTimeBasedTrigger: function() {
+                this.showSmartNotification("💡 Need help with this topic? I can provide examples or answer your questions!");
+            },
+            
+            showSmartNotification: function(message) {
+                if ($('#choya-smart-notification').length === 0) {
+                    const notification = $('<div id="choya-smart-notification" class="choya-smart-notification">' + 
+                        '<div class="choya-smart-message">' + message + '</div>' +
+                        '<button class="choya-smart-open">Open Chat</button>' +
+                        '<button class="choya-smart-close">×</button>' +
+                        '</div>');
+                    
+                    $('body').append(notification);
+                    
+                    notification.find('.choya-smart-open').on('click', () => {
+                        if (typeof choyaAI !== 'undefined') {
+                            choyaAI.openChat();
+                        }
+                        notification.fadeOut();
+                    });
+                    
+                    notification.find('.choya-smart-close').on('click', () => {
+                        notification.fadeOut();
+                    });
+                    
+                    setTimeout(() => {
+                        notification.fadeOut();
+                    }, 10000);
+                }
+            }
+        };
+        
+        $(document).ready(function() {
+            window.choyaProSmartTriggers.init();
+        });
+        </script>
+        
+        <style>
+        .choya-smart-notification {
+            position: fixed;
+            bottom: 100px;
+            right: 20px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            padding: 20px;
+            max-width: 300px;
+            z-index: 9999;
+            animation: slideInRight 0.3s ease;
+        }
+        
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .choya-smart-message {
+            margin-bottom: 15px;
+            line-height: 1.4;
+        }
+        
+        .choya-smart-open, .choya-smart-close {
+            background: #4a90e2;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 8px;
+        }
+        
+        .choya-smart-close {
+            background: #ccc;
+            color: #666;
+        }
+        
+        .choya-smart-open:hover {
+            background: #3a80d2;
+        }
+        </style>
+        <?php
+    }
+    
+    public function track_event() {
+        check_ajax_referer('choya_frontend_nonce', 'nonce');
+        
+        if (!$this->is_pro_enabled()) {
+            wp_send_json_error(array('message' => 'Pro features not available'));
+        }
+        
+        $event = sanitize_text_field($_POST['event']);
+        $data = json_decode(stripslashes($_POST['data']), true);
+        
+        // Save event to database
+        $this->save_analytics_event($event, $data);
+        
+        wp_send_json_success(array('message' => 'Event tracked'));
+    }
+    
+    private function save_analytics_event($event, $data) {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'choya_ai_analytics';
+        
+        // Create table if it doesn't exist
+        $charset_collate = $wpdb->get_charset_collate();
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            event_type varchar(100) NOT NULL,
+            event_data longtext,
+            user_id bigint(20) DEFAULT 0,
+            session_id varchar(255) DEFAULT '',
+            page_url varchar(500) DEFAULT '',
+            timestamp datetime DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            INDEX event_idx (event_type),
+            INDEX timestamp_idx (timestamp)
+        ) $charset_collate;";
+        
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+        
+        // Insert event
+        $wpdb->insert(
+            $table_name,
+            array(
+                'event_type' => $event,
+                'event_data' => json_encode($data),
+                'user_id' => get_current_user_id(),
+                'session_id' => $data['session_id'] ?? '',
+                'page_url' => $data['page_url'] ?? '',
+                'timestamp' => current_time('mysql')
+            ),
+            array('%s', '%s', '%d', '%s', '%s', '%s')
+        );
+    }
+    
+    public function enhance_content($content) {
+        if (!$this->is_pro_enabled() || !is_single() || !in_the_loop()) {
+            return $content;
+        }
+        
+        // Add AI assistant button to content
+        $ai_assistant_button = '<div class="choya-content-enhancement">';
+        $ai_assistant_button .= '<button class="choya-explain-button" onclick="choyaProExplainContent()">🤔 Explain This</button>';
+        $ai_assistant_button .= '<button class="choya-quiz-button" onclick="choyaProGenerateQuiz()">📝 Quiz Me</button>';
+        $ai_assistant_button .= '<button class="choya-summarize-button" onclick="choyaProSummarizeContent()">📋 Summarize</button>';
+        $ai_assistant_button .= '</div>';
+        
+        return $content . $ai_assistant_button;
+    }
+    
+    public function add_product_ai_assistant() {
+        if (!$this->is_pro_enabled() || !class_exists('WooCommerce')) {
+            return;
+        }
+        
+        echo '<div class="choya-product-ai">';
+        echo '<button class="choya-product-help" onclick="choyaProProductHelp()">🤖 Need Help with This Product?</button>';
+        echo '</div>';
+    }
+    
+    public function render_lead_capture() {
+        if (!$this->is_pro_enabled()) return;
+        
+        ?>
+        <script>
+        // Lead capture functionality
+        window.choyaProLeads = {
+            init: function() {
+                this.setupLeadCapture();
+            },
+            
+            setupLeadCapture: function() {
+                // Show lead capture after user has had a positive interaction
+                setTimeout(() => {
+                    if (this.shouldShowLeadCapture()) {
+                        this.showLeadCaptureForm();
+                    }
+                }, 60000); // 1 minute
+            },
+            
+            shouldShowLeadCapture() {
+                // Logic to determine if user should see lead capture
+                // Based on engagement, conversation length, etc.
+                return Math.random() > 0.7; // Simplified for demo
+            },
+            
+            showLeadCaptureForm: function() {
+                if ($('#choya-lead-capture').length === 0) {
+                    const form = '<div id="choya-lead-capture" class="choya-lead-capture">' +
+                        '<div class="choya-lead-content">' +
+                        '<h3>💬 Love our AI assistant?</h3>' +
+                        '<p>Get personalized help and priority support!</p>' +
+                        '<form id="choya-lead-form">' +
+                        '<input type="text" id="lead-name" placeholder="Your Name" required>' +
+                        '<input type="email" id="lead-email" placeholder="Your Email" required>' +
+                        '<button type="submit">Get Personalized Help</button>' +
+                        '</form>' +
+                        '<button class="choya-lead-close">×</button>' +
+                        '</div>' +
+                        '</div>';
+                    
+                    $('body').append(form);
+                    
+                    $('#choya-lead-form').on('submit', (e) => {
+                        e.preventDefault();
+                        this.captureLead();
+                    });
+                    
+                    $('.choya-lead-close').on('click', () => {
+                        $('#choya-lead-capture').fadeOut();
+                    });
+                }
+            },
+            
+            captureLead: function() {
+                const name = $('#lead-name').val();
+                const email = $('#lead-email').val();
+                
+                $.ajax({
+                    url: choya_frontend.ajax_url,
+                    type: 'POST',
+                    data: {
+                        action: 'choya_capture_lead',
+                        name: name,
+                        email: email,
+                        nonce: choya_frontend.nonce
+                    },
+                    success: () => {
+                        $('#choya-lead-capture').html('<div class="choya-lead-thankyou"><h3>Thank you!</h3><p>We\'ll be in touch soon!</p></div>');
+                        setTimeout(() => {
+                            $('#choya-lead-capture').fadeOut();
+                        }, 3000);
+                    }
+                });
+            }
+        };
+        
+        $(document).ready(function() {
+            window.choyaProLeads.init();
+        });
+        </script>
+        
+        <style>
+        .choya-lead-capture {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            padding: 20px;
+            max-width: 350px;
+            z-index: 9998;
+        }
+        
+        .choya-lead-content {
+            position: relative;
+        }
+        
+        .choya-lead-close {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            color: #999;
+        }
+        
+        .choya-lead-form input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .choya-lead-form button {
+            width: 100%;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .choya-lead-thankyou {
+            text-align: center;
+            padding: 20px;
+        }
+        </style>
+        <?php
+    }
+    
+    public function add_pro_settings_page() {
+        add_submenu_page(
+            'choya-ai-settings',
+            'Pro Features',
+            '🎯 Pro Features',
+            'manage_options',
+            'choya-ai-pro-features',
+            array($this, 'render_pro_settings')
+        );
+    }
+    
+    public function render_pro_settings() {
+        if (!$this->is_pro_enabled()) {
+            echo '<div class="notice notice-error is-dismissible"><p>You need an active Pro license to access these features.</p></div>';
+            return;
+        }
+        
+        echo '<div class="wrap">';
+        echo '<h1>🎯 Choya AI Pro Features</h1>';
+        
+        // Pro features settings
+        echo '<form method="post" id="choya-pro-settings-form">';
+        echo '<table class="form-table">';
+        
+        echo '<tr><th colspan="2"><h3>🚀 Smart Features</h3></th></tr>';
+        
+        echo '<tr>';
+        echo '<th scope="row">Smart Triggers</th>';
+        echo '<td><input type="checkbox" name="smart_triggers" ' . checked(get_option('choya_ai_smart_triggers', '1'), '1', false) . '> Enable behavioral triggers</td>';
+        echo '</tr>';
+        
+        echo '<tr>';
+        echo '<th scope="row">Exit Intent</th>';
+        echo '<td><input type="checkbox" name="exit_intent" ' . checked(get_option('choya_ai_exit_intent', '1'), '1', false) . '> Show help on exit intent</td>';
+        echo '</tr>';
+        
+        echo '<tr>';
+        echo '<th scope="row">Time-based Help</th>';
+        echo '<td><input type="checkbox" name="time_based_help" ' . checked(get_option('choya_ai_time_based_help', '1'), '1', false) . '> Offer help after time on page</td>';
+        echo '</tr>';
+        
+        echo '<tr><th colspan="2"><h3>🌍 Multi-Language</h3></th></tr>';
+        
+        echo '<tr>';
+        echo '<th scope="row">Auto Translation</th>';
+        echo '<td><input type="checkbox" name="auto_translation" ' . checked(get_option('choya_ai_auto_translation', '0'), '1', false) . '> Enable automatic translation</td>';
+        echo '</tr>';
+        
+        echo '<tr>';
+        echo '<th scope="row">Supported Languages</th>';
+        echo '<td><select name="supported_languages[]" multiple style="height: 100px; width: 300px;">';
+        $languages = array(
+            'en' => 'English',
+            'es' => 'Spanish',
+            'fr' => 'French',
+            'de' => 'German',
+            'it' => 'Italian',
+            'pt' => 'Portuguese',
+            'ru' => 'Russian',
+            'zh' => 'Chinese',
+            'ja' => 'Japanese',
+            'ko' => 'Korean'
+        );
+        
+        $selected_languages = get_option('choya_ai_supported_languages', array());
+        
+        foreach ($languages as $code => $name) {
+            $selected = in_array($code, $selected_languages) ? 'selected' : '';
+            echo '<option value="' . $code . '" ' . $selected . '>' . $name . '</option>';
+        }
+        
+        echo '</select></td>';
+        echo '</tr>';
+        
+        echo '</table>';
+        echo '<p class="submit"><input type="submit" name="submit" class="button-primary" value="💾 Save Pro Settings"></p>';
+        echo '</form>';
+        
+        echo '</div>';
+    }
+    
+    public function hourly_maintenance() {
+        // Clean up old analytics data (keep 90 days)
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'choya_ai_analytics';
+        $cutoff_date = date('Y-m-d H:i:s', strtotime('-90 days'));
+        
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM $table_name WHERE timestamp < %s",
+            $cutoff_date
+        ));
+        
+        // Clean up old conversations (keep 30 days)
+        $conv_table = $wpdb->prefix . 'choya_ai_conversations';
+        
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM $conv_table WHERE timestamp < %s",
+            $cutoff_date
+        ));
+    }
+}

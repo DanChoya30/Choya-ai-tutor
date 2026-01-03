@@ -1,0 +1,43 @@
+<?php
+/**
+ * Chat widget template
+ */
+$settings = $this->get_chat_settings();
+$is_pro = get_option('choya_ai_is_pro', '0') === '1';
+?>
+
+<div id="choya-ai-container" class="choya-ai-position-<?php echo esc_attr($settings['chat_position']); ?>">
+    <!-- Chat Toggle Button -->
+    <div id="choya-ai-toggle" class="choya-ai-toggle">
+        <div class="choya-ai-icon">🤖</div>
+        <div class="choya-ai-dot"></div>
+    </div>
+    
+    <!-- Chat Widget -->
+    <div id="choya-ai-widget" class="choya-ai-widget">
+        <div class="choya-ai-header">
+            <div class="choya-ai-avatar">🤖</div>
+            <div class="choya-ai-title"><?php echo esc_html($settings['brand_name']); ?></div>
+            <?php if ($is_pro): ?>
+                <div class="choya-ai-pro-badge">PRO</div>
+            <?php endif; ?>
+            <div class="choya-ai-close" id="choya-ai-close">×</div>
+        </div>
+        
+        <div class="choya-ai-messages" id="choya-ai-messages">
+            <div class="choya-ai-message choya-ai-bot">
+                <div class="choya-ai-avatar-small">🤖</div>
+                <div class="choya-ai-bubble">
+                    <div class="choya-ai-text"><?php echo esc_html($settings['welcome_message']); ?></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="choya-ai-input-container">
+            <input type="text" id="choya-ai-input" placeholder="Type your message..." maxlength="500">
+            <button id="choya-ai-send" disabled>
+                <span>➤</span>
+            </button>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,157 @@
+<?php
+/**
+ * Choya AI Shortcode Handler
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class Choya_AI_Shortcode {
+    
+    public function __construct() {
+        add_shortcode('choya_ai_chat', array($this, 'chat_shortcode'));
+        add_shortcode('choya_ai_button', array($this, 'button_shortcode'));
+        add_shortcode('choya_ai_widget', array($this, 'widget_shortcode'));
+    }
+    
+    /**
+     * Main chat widget shortcode
+     * Usage: [choya_ai_chat position="center" width="100%" height="500px" embedded="true"]
+     */
+    public function chat_shortcode($atts) {
+        $atts = shortcode_atts(array(
+            'position' => 'center',
+            'width' => '100%',
+            'height' => '500px',
+            'embedded' => 'true',
+            'show_header' => 'true',
+            'initial_message' => '',
+            'theme' => 'light'
+        ), $atts, 'choya_ai_chat');
+        
+        // Generate unique ID for this instance
+        $instance_id = 'choya-embedded-' . uniqid();
+        
+        ob_start();
+        
+        echo '<div class="choya-ai-embedded-container" id="' . esc_attr($instance_id) . '" style="width: ' . esc_attr($atts['width']) . '; margin: 20px auto;">';
+        
+        if ($atts['show_header'] === 'true') {
+            echo '<div class="choya-ai-embedded-header">';
+            echo '<div class="choya-ai-embedded-avatar">🤖</div>';
+            echo '<div class="choya-ai-embedded-title">' . esc_html(get_option('choya_ai_brand_name', 'Choya AI')) . '</div>';
+            echo '<div class="choya-ai-embedded-minimize">×</div>';
+            echo '</div>';
+        }
+        
+        echo '<div class="choya-ai-embedded-messages" data-instance="' . esc_attr($instance_id) . '">';
+        
+        // Show initial welcome message or custom message
+        $welcome_message = !empty($atts['initial_message']) ? $atts['initial_message'] : get_option('choya_ai_welcome_message', 'Hi! I\'m Choya, your AI assistant. How can I help you today?');
+        
+        echo '<div class="choya-ai-message choya-ai-bot">';
+        echo '<div class="choya-ai-avatar-small">🤖</div>';
+        echo '<div class="choya-ai-bubble">';
+        echo '<div class="choya-ai-text">' . esc_html($welcome_message) . '</div>';
+        echo '</div>';
+        echo '</div>';
+        
+        echo '</div>';
+        
+        echo '<div class="choya-ai-embedded-input" data-instance="' . esc_attr($instance_id) . '">';
+        echo '<input type="text" class="choya-embedded-input" placeholder="Type your message..." maxlength="500">';
+        echo '<button class="choya-embedded-send" disabled>➤</button>';
+        echo '</div>';
+        
+        echo '</div>';
+        
+        // Add instance-specific CSS
+        echo '<style>';
+        echo '#' . esc_attr($instance_id) . ' {';
+        if ($atts['theme'] === 'dark') {
+            echo 'background: #2a2a2a; color: #fff;';
+            echo '.choya-ai-embedded-header { background: #3a3a3a; }';
+            echo '.choya-ai-embedded-messages { background: #1a1a1a; }';
+            echo '.choya-ai-embedded-input { background: #3a3a3a; border-top: 1px solid #555; }';
+            echo '.choya-ai-embedded-input input { background: #2a2a2a; color: #fff; border: 1px solid #555; }';
+            echo '.choya-ai-embedded-input input:focus { border-color: #4a90e2; }';
+        }
+        echo 'height: ' . esc_attr($atts['height']) . ';';
+        echo '}';
+        echo '</style>';
+        
+        return ob_get_clean();
+    }
+    
+    /**
+     * Simple chat button shortcode
+     * Usage: [choya_ai_button text="Chat with AI" style="primary"]
+     */
+    public function button_shortcode($atts) {
+        $atts = shortcode_atts(array(
+            'text' => '🤖 Chat with AI',
+            'style' => 'primary',
+            'size' => 'medium',
+            'icon' => '🤖'
+        ), $atts, 'choya_ai_button');
+        
+        $classes = array(
+            'choya-ai-button',
+            'choya-ai-button-' . sanitize_html_class($atts['style']),
+            'choya-ai-button-' . sanitize_html_class($atts['size'])
+        );
+        
+        ob_start();
+        
+        echo '<button class="' . esc_attr(implode(' ', $classes)) . '" onclick="choyaAIOpenChat()">';
+        echo '<span class="choya-ai-button-icon">' . esc_html($atts['icon']) . '</span>';
+        echo '<span class="choya-ai-button-text">' . esc_html($atts['text']) . '</span>';
+        echo '</button>';
+        
+        return ob_get_clean();
+    }
+    
+    /**
+     * Widget shortcode for sidebar or widget areas
+     * Usage: [choya_ai_widget title="AI Assistant" compact="true"]
+     */
+    public function widget_shortcode($atts) {
+        $atts = shortcode_atts(array(
+            'title' => '🤖 Choya AI Assistant',
+            'compact' => 'false',
+            'show_preview' => 'true'
+        ), $atts, 'choya_ai_widget');
+        
+        ob_start();
+        
+        echo '<div class="choya-ai-widget-shortcode">';
+        
+        if (!empty($atts['title'])) {
+            echo '<div class="choya-ai-widget-title">' . esc_html($atts['title']) . '</div>';
+        }
+        
+        if ($atts['show_preview'] === 'true' && $atts['compact'] === 'false') {
+            echo '<div class="choya-ai-widget-preview">';
+            echo '<div class="choya-ai-widget-message">"What\'s the best way to learn AI?"</div>';
+            echo '<div class="choya-ai-widget-message">"I can help explain complex topics in simple terms!"</div>';
+            echo '</div>';
+        }
+        
+        echo '<div class="choya-ai-widget-actions">';
+        echo '<button class="choya-ai-widget-open-button" onclick="choyaAIOpenChat()">💬 Start Chat</button>';
+        
+        if (get_option('choya_ai_is_pro', '0') === '1') {
+            echo '<button class="choya-ai-widget-help-button">❓ Quick Help</button>';
+        }
+        
+        echo '</div>';
+        
+        echo '</div>';
+        
+        return ob_get_clean();
+    }
+}
+
+// Initialize shortcode class
+new Choya_AI_Shortcode();

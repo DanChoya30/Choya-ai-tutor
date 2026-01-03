@@ -1,0 +1,236 @@
+/**
+ * Choya AI Admin JavaScript
+ */
+
+jQuery(document).ready(function($) {
+    'use strict';
+    
+    // License activation form
+    $('#choya-license-form').on('submit', function(e) {
+        e.preventDefault();
+        
+        const form = $(this);
+        const submitButton = form.find('input[type="submit"]');
+        const originalText = submitButton.val();
+        
+        const data = {
+            action: 'choya_activate_license',
+            license_email: form.find('input[name="license_email"]').val(),
+            license_key: form.find('input[name="license_key"]').val(),
+            nonce: choya_admin.nonce
+        };
+        
+        // Validation
+        if (!data.license_email || !data.license_key) {
+            showNotice('Please fill in both email and license key.', 'error');
+            return;
+        }
+        
+        if (!isValidEmail(data.license_email)) {
+            showNotice('Please enter a valid email address.', 'error');
+            return;
+        }
+        
+        // Disable form and show loading
+        submitButton.val('Activating...').prop('disabled', true);
+        showNotice('Activating your Pro license...', 'info');
+        
+        $.ajax({
+            url: choya_admin.ajax_url,
+            type: 'POST',
+            data: data,
+            dataType: 'json',
+            timeout: 30000
+        })
+        .done(function(response) {
+            if (response.success) {
+                showNotice(response.data.message, 'success');
+                
+                // Reload page after successful activation
+                setTimeout(function() {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                showNotice(response.data.message, 'error');
+                submitButton.val(originalText).prop('disabled', false);
+            }
+        })
+        .fail(function(xhr, status, error) {
+            showNotice('Connection error. Please try again.', 'error');
+            submitButton.val(originalText).prop('disabled', false);
+        });
+    });
+    
+    // License deactivation
+    $('#choya-deactivate-license').on('click', function(e) {
+        e.preventDefault();
+        
+        if (!confirm('Are you sure you want to deactivate your Pro license? This will disable all Pro features.')) {
+            return;
+        }
+        
+        const button = $(this);
+        const originalText = button.text();
+        
+        button.text('Deactivating...').prop('disabled', true);
+        
+        $.ajax({
+            url: choya_admin.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'choya_deactivate_license',
+                nonce: choya_admin.nonce
+            },
+            dataType: 'json'
+        })
+        .done(function(response) {
+            if (response.success) {
+                showNotice('License deactivated successfully.', 'success');
+                
+                setTimeout(function() {
+                    window.location.reload();
+                }, 1500);
+            } else {
+                showNotice(response.data.message, 'error');
+                button.text(originalText).prop('disabled', false);
+            }
+        })
+        .fail(function() {
+            showNotice('Connection error. Please try again.', 'error');
+            button.text(originalText).prop('disabled', false);
+        });
+    });
+    
+    // Settings form validation
+    $('#choya-settings-form').on('submit', function() {
+        const apiKey = $('#choya-openrouter-api-key').val().trim();
+        
+        if (apiKey && !apiKey.startsWith('sk-or-v1-')) {
+            showNotice('OpenRouter API key should start with "sk-or-v1-".', 'error');
+            return false;
+        }
+        
+        return true;
+    });
+    
+    // Tab navigation
+    $('.nav-tab').on('click', function(e) {
+        e.preventDefault();
+        
+        const tab = $(this);
+        const tabId = tab.attr('href').split('tab=')[1];
+        
+        // Update URL without reloading
+        const newUrl = window.location.pathname + '?page=choya-ai-settings&tab=' + tabId;
+        window.history.pushState({tab: tabId}, '', newUrl);
+        
+        // Update active tab
+        $('.nav-tab').removeClass('nav-tab-active');
+        tab.addClass('nav-tab-active');
+        
+        // Show/hide tab content (you'd need to implement the content switching)
+        // This is a simplified version - in reality you'd have different content areas
+    });
+    
+    // File upload for knowledge base (Pro feature)
+    $('#choya-upload-knowledge-file').on('change', function() {
+        const file = this.files[0];
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        
+        if (file && file.size > maxSize) {
+            showNotice('File size must be under 10MB.', 'error');
+            return;
+        }
+        
+        if (file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('action', 'choya_upload_knowledge_file');
+            formData.append('nonce', choya_admin.nonce);
+            
+            $.ajax({
+                url: choya_admin.ajax_url,
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                beforeSend: function() {
+                    $('#choya-upload-status').html('<span class="uploading">Uploading...</span>');
+                }
+            })
+            .done(function(response) {
+                if (response.success) {
+                    showNotice('File uploaded successfully!', 'success');
+                    $('#choya-upload-status').html('<span class="success">Upload complete</span>');
+                } else {
+                    showNotice(response.data.message, 'error');
+                    $('#choya-upload-status').html('<span class="error">' + response.data.message + '</span>');
+                }
+            })
+            .fail(function() {
+                showNotice('Upload failed. Please try again.', 'error');
+                $('#choya-upload-status').html('<span class="error">Upload failed</span>');
+            });
+        }
+    });
+    
+    // Analytics date range picker
+    if ($('#choya-analytics-date-from').length && $('#choya-analytics-date-to').length) {
+        const today = new Date();
+        const thirtyDaysAgo = new Date(today.getTime() - (30 * 24 * 60 * 60 * 1000));
+        
+        $('#choya-analytics-date-from, #choya-analytics-date-to').datepicker({
+            dateFormat: 'yy-mm-dd',
+            maxDate: today,
+            defaultDate: thirtyDaysAgo
+        });
+        
+        // Load analytics when date range changes
+        $('#choya-analytics-date-from, #choya-analytics-date-to, #choya-analytics-interval').on('change', function() {
+            loadAnalytics();
+        });
+    }
+    
+    // Helper functions
+    function showNotice(message, type) {
+        const noticeClass = type === 'success' ? 'notice-success' : 
+                           type === 'error' ? 'notice-error' : 'notice-warning';
+        
+        const noticeHtml = '<div class="notice ' + noticeClass + ' is-dismissible"><p>' + message + '</p></div>';
+        
+        // Remove existing notices
+        $('.notice').remove();
+        
+        // Add new notice
+        $('#choya-ai-settings').before(noticeHtml);
+        
+        // Auto-hide success notices after 5 seconds
+        if (type === 'success') {
+            setTimeout(function() {
+                $('.notice-success').fadeOut();
+            }, 5000);
+        }
+    }
+    
+    function isValidEmail(email) {
+        const re = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+        return re.test(email);
+    }
+    
+    function loadAnalytics() {
+        // This would load analytics data via AJAX
+        console.log('Loading analytics...');
+    }
+    
+    // Export tracking for Pro features
+    $('#choya-export-analytics').on('click', function() {
+        const format = $(this).data('format') || 'csv';
+        const dateFrom = $('#choya-analytics-date-from').val();
+        const dateTo = $('#choya-analytics-date-to').val();
+        
+        const url = choya_admin.ajax_url + '?action=choya_export_analytics&format=' + format + 
+                   '&date_from=' + dateFrom + '&date_to=' + dateTo + '&nonce=' + choya_admin.nonce;
+        
+        window.location.href = url;
+    });
+});

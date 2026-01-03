@@ -1,0 +1,598 @@
+/**
+ * Choya AI Frontend JavaScript
+ */
+
+(function($) {
+    'use strict';
+    
+    class ChoyaAI {
+        constructor() {
+            this.isOpen = false;
+            this.isTyping = false;
+            this.conversationHistory = [];
+            this.sessionId = '';
+            this.settings = choya_frontend.settings;
+            this.isPro = choya_frontend.is_pro === '1';
+            
+            this.init();
+        }
+        
+        init() {
+            this.cacheElements();
+            this.bindEvents();
+            this.loadChatState();
+            this.generateSessionId();
+            
+            // Initialize Pro features if available
+            if (this.isPro) {
+                this.initProFeatures();
+            }
+        }
+        
+        cacheElements() {
+            this.toggleButton = $('#choya-ai-toggle');
+            this.chatWidget = $('#choya-ai-widget');
+            this.closeButton = $('#choya-ai-close');
+            this.messagesContainer = $('#choya-ai-messages');
+            this.inputField = $('#choya-ai-input');
+            this.sendButton = $('#choya-ai-send');
+        }
+        
+        bindEvents() {
+            // Toggle chat widget
+            if (this.toggleButton.length) {
+                this.toggleButton.on('click', (e) => {
+                    e.preventDefault();
+                    this.toggleChat();
+                });
+            }
+            
+            // Close button
+            if (this.closeButton.length) {
+                this.closeButton.on('click', () => this.closeChat());
+            }
+            
+            // Send message
+            if (this.sendButton.length) {
+                this.sendButton.on('click', () => this.sendMessage());
+            }
+            
+            // Input field events
+            if (this.inputField.length) {
+                this.inputField.on('input', () => this.updateSendButton());
+                
+                this.inputField.on('keypress', (e) => {
+                    if (e.which === 13 && !e.shiftKey) {
+                        e.preventDefault();
+                        this.sendMessage();
+                    }
+                });
+                
+                this.inputField.on('focus', () => {
+                    this.chatWidget.addClass('focused');
+                });
+                
+                this.inputField.on('blur', () => {
+                    this.chatWidget.removeClass('focused');
+                });
+            }
+            
+            // Keyboard navigation
+            $(document).on('keydown', (e) => {
+                if (e.key === 'Escape' && this.isOpen) {
+                    this.closeChat();
+                }
+            });
+            
+            // Close on outside click
+            $(document).on('click', (e) => {
+                if (!$(e.target).closest('#choya-ai-widget').length && 
+                    !$(e.target).closest('#choya-ai-toggle').length && 
+                    this.isOpen) {
+                    this.closeChat();
+                }
+            });
+        }
+        
+        updateSendButton() {
+            if (!this.inputField || !this.sendButton) return;
+            
+            const message = this.inputField.val().trim();
+            const isValid = message.length > 0 && message.length <= 500;
+            
+            if (isValid && !this.isTyping) {
+                this.sendButton.addClass('active').prop('disabled', false);
+            } else {
+                this.sendButton.removeClass('active').prop('disabled', true);
+            }
+        }
+        
+        toggleChat() {
+            if (this.isOpen) {
+                this.closeChat();
+            } else {
+                this.openChat();
+            }
+        }
+        
+        openChat() {
+            this.isOpen = true;
+            this.chatWidget.addClass('active');
+            this.toggleButton.addClass('active');
+            this.saveChatState();
+            
+            setTimeout(() => {
+                if (this.inputField) {
+                    this.inputField.focus();
+                }
+                
+                // Trigger Pro analytics if available
+                if (this.isPro && typeof choyaPro !== 'undefined') {
+                    choyaPro.trackEvent('chat_opened', {
+                        position: this.settings.chat_position,
+                        page_url: window.location.href
+                    });
+                }
+            }, 300);
+        }
+        
+        closeChat() {
+            this.isOpen = false;
+            this.chatWidget.removeClass('active');
+            this.toggleButton.removeClass('active');
+            this.saveChatState();
+        }
+        
+        generateSessionId() {
+            this.sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+        
+        async sendMessage() {
+            if (!this.inputField) return;
+            
+            const message = this.inputField.val().trim();
+            if (!message || this.isTyping) return;
+            
+            // Clear input and disable send button
+            this.inputField.val('');
+            this.sendButton.removeClass('active').prop('disabled', true);
+            this.isTyping = true;
+            
+            // Add user message to history and display
+            this.addMessageToHistory(message, 'user');
+            this.addMessage(message, 'user');
+            
+            // Show typing indicator
+            this.showTypingIndicator();
+            
+            try {
+                const response = await $.ajax({
+                    url: choya_frontend.ajax_url,
+                    type: 'POST',
+                    data: {
+                        action: 'choya_chat',
+                        message: message,
+                        history: JSON.stringify(this.conversationHistory),
+                        session_id: this.sessionId,
+                        nonce: choya_frontend.nonce
+                    },
+                    dataType: 'json',
+                    timeout: 30000
+                });
+                
+                this.hideTypingIndicator();
+                this.isTyping = false;
+                
+                if (response.success) {
+                    this.addMessageToHistory(response.data.response, 'bot');
+                    this.addMessage(response.data.response, 'bot');
+                    
+                    // Track successful response
+                    if (this.isPro && typeof choyaPro !== 'undefined') {
+                        choyaPro.trackEvent('message_responded', {
+                            session_id: this.sessionId,
+                            response_time: Date.now()
+                        });
+                    }
+                } else {
+                    const errorMessage = response.data.message || 'I apologize, but I encountered an error. Please try again.';
+                    this.addMessageToHistory(errorMessage, 'bot');
+                    this.addMessage(errorMessage, 'bot');
+                }
+                
+            } catch (error) {
+                this.hideTypingIndicator();
+                this.isTyping = false;
+                
+                let errorMessage = 'I\'m having trouble connecting right now. Please try again later.';
+                if (error.statusText === 'timeout') {
+                    errorMessage = 'I\'m taking longer than expected. Please try again.';
+                } else if (error.status === 401) {
+                    errorMessage = 'Authentication error. Please contact the site administrator.';
+                } else if (error.status === 429) {
+                    errorMessage = 'I\'m getting too many requests. Please wait a moment.';
+                }
+                
+                this.addMessageToHistory(errorMessage, 'bot');
+                this.addMessage(errorMessage, 'bot');
+            }
+            
+            this.updateSendButton();
+        }
+        
+        addMessage(message, sender) {
+            if (!this.messagesContainer) return;
+            
+            const isUser = sender === 'user';
+            const messageClass = isUser ? 'choya-ai-user' : 'choya-ai-bot';
+            
+            const messageHTML = `
+                <div class="choya-ai-message ${messageClass}">
+                    <div class="choya-ai-avatar-small">${isUser ? '👤' : '🤖'}</div>
+                    <div class="choya-ai-bubble">
+                        <div class="choya-ai-text">${this.escapeHtml(message)}</div>
+                    </div>
+                </div>
+            `;
+            
+            this.messagesContainer.append(messageHTML);
+            this.scrollToBottom();
+        }
+        
+        addMessageToHistory(message, sender) {
+            this.conversationHistory.push({
+                message: message,
+                sender: sender,
+                timestamp: new Date().toISOString()
+            });
+            
+            // Keep only last 10 messages for context
+            if (this.conversationHistory.length > 10) {
+                this.conversationHistory = this.conversationHistory.slice(-10);
+            }
+        }
+        
+        showTypingIndicator() {
+            const typingHTML = `
+                <div class="choya-ai-message choya-ai-bot">
+                    <div class="choya-ai-avatar-small">🤖</div>
+                    <div class="choya-ai-typing">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                </div>
+            `;
+            
+            this.typingIndicator = $(typingHTML);
+            this.messagesContainer.append(this.typingIndicator);
+            this.scrollToBottom();
+        }
+        
+        hideTypingIndicator() {
+            if (this.typingIndicator) {
+                this.typingIndicator.remove();
+                this.typingIndicator = null;
+            }
+        }
+        
+        scrollToBottom() {
+            if (this.messagesContainer) {
+                this.messagesContainer.stop().animate({
+                    scrollTop: this.messagesContainer[0].scrollHeight
+                }, 300);
+            }
+        }
+        
+        escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        saveChatState() {
+            try {
+                localStorage.setItem('choya_ai_chat_open', this.isOpen ? '1' : '0');
+                localStorage.setItem('choya_ai_conversation_' + window.location.pathname, JSON.stringify(this.conversationHistory));
+            } catch (e) {
+                console.warn('Could not save chat state:', e);
+            }
+        }
+        
+        loadChatState() {
+            try {
+                const isOpen = localStorage.getItem('choya_ai_chat_open') === '1';
+                const savedHistory = localStorage.getItem('choya_ai_conversation_' + window.location.pathname);
+                
+                if (savedHistory) {
+                    try {
+                        this.conversationHistory = JSON.parse(savedHistory);
+                    } catch (e) {
+                        this.conversationHistory = [];
+                    }
+                }
+                
+                if (isOpen) {
+                    setTimeout(() => this.openChat(), 100);
+                }
+            } catch (e) {
+                console.warn('Could not load chat state:', e);
+            }
+        }
+        
+        initProFeatures() {
+            // Initialize Pro features if available
+            if (window.choyaPro) {
+                window.choyaPro.init();
+            }
+        }
+    }
+    
+    // Embedded chat functionality
+    class ChoyaAIEmbedded {
+        constructor() {
+            this.isTyping = false;
+            this.conversationHistory = [];
+            this.sessionId = '';
+            
+            this.init();
+        }
+        
+        init() {
+            this.cacheElements();
+            this.bindEvents();
+            this.generateSessionId();
+        }
+        
+        cacheElements() {
+            this.messagesContainer = $('#choya-embedded-messages');
+            this.inputField = $('#choya-embedded-input');
+            this.sendButton = $('#choya-embedded-send');
+        }
+        
+        bindEvents() {
+            if (this.sendButton) {
+                this.sendButton.on('click', () => this.sendMessage());
+            }
+            
+            if (this.inputField) {
+                this.inputField.on('keypress', (e) => {
+                    if (e.which === 13 && !e.shiftKey) {
+                        e.preventDefault();
+                        this.sendMessage();
+                    }
+                });
+                
+                this.inputField.on('input', () => this.updateSendButton());
+            }
+        }
+        
+        updateSendButton() {
+            if (!this.inputField || !this.sendButton) return;
+            
+            const message = this.inputField.val().trim();
+            const isValid = message.length > 0 && message.length <= 500;
+            
+            if (isValid && !this.isTyping) {
+                this.sendButton.addClass('active');
+            } else {
+                this.sendButton.removeClass('active');
+            }
+        }
+        
+        generateSessionId() {
+            this.sessionId = 'embedded_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+        
+        async sendMessage() {
+            if (!this.inputField) return;
+            
+            const message = this.inputField.val().trim();
+            if (!message || this.isTyping) return;
+            
+            this.inputField.val('');
+            this.sendButton.removeClass('active');
+            this.isTyping = true;
+            
+            this.addMessageToHistory(message, 'user');
+            this.addMessage(message, 'user');
+            
+            this.showTypingIndicator();
+            
+            try {
+                const response = await $.ajax({
+                    url: choya_frontend.ajax_url,
+                    type: 'POST',
+                    data: {
+                        action: 'choya_chat',
+                        message: message,
+                        history: JSON.stringify(this.conversationHistory),
+                        session_id: this.sessionId,
+                        nonce: choya_frontend.nonce
+                    },
+                    dataType: 'json',
+                    timeout: 30000
+                });
+                
+                this.hideTypingIndicator();
+                this.isTyping = false;
+                
+                if (response.success) {
+                    this.addMessageToHistory(response.data.response, 'bot');
+                    this.addMessage(response.data.response, 'bot');
+                } else {
+                    const errorMessage = response.data.message || 'I apologize, but I encountered an error.';
+                    this.addMessageToHistory(errorMessage, 'bot');
+                    this.addMessage(errorMessage, 'bot');
+                }
+                
+            } catch (error) {
+                this.hideTypingIndicator();
+                this.isTyping = false;
+                
+                const errorMessage = 'I\'m having trouble connecting right now. Please try again later.';
+                this.addMessageToHistory(errorMessage, 'bot');
+                this.addMessage(errorMessage, 'bot');
+            }
+        }
+        
+        addMessage(message, sender) {
+            if (!this.messagesContainer) return;
+            
+            const isUser = sender === 'user';
+            const messageClass = isUser ? 'choya-ai-user' : 'choya-ai-bot';
+            
+            const messageHTML = `
+                <div class="choya-ai-message ${messageClass}">
+                    <div class="choya-ai-avatar-small">${isUser ? '👤' : '🤖'}</div>
+                    <div class="choya-ai-bubble">
+                        <div class="choya-ai-text">${this.escapeHtml(message)}</div>
+                    </div>
+                </div>
+            `;
+            
+            this.messagesContainer.append(messageHTML);
+            this.scrollToBottom();
+        }
+        
+        addMessageToHistory(message, sender) {
+            this.conversationHistory.push({
+                message: message,
+                sender: sender,
+                timestamp: new Date().toISOString()
+            });
+            
+            if (this.conversationHistory.length > 10) {
+                this.conversationHistory = this.conversationHistory.slice(-10);
+            }
+        }
+        
+        showTypingIndicator() {
+            const typingHTML = `
+                <div class="choya-ai-message choya-ai-bot">
+                    <div class="choya-ai-avatar-small">🤖</div>
+                    <div class="choya-ai-typing">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                </div>
+            `;
+            
+            this.typingIndicator = $(typingHTML);
+            this.messagesContainer.append(this.typingIndicator);
+            this.scrollToBottom();
+        }
+        
+        hideTypingIndicator() {
+            if (this.typingIndicator) {
+                this.typingIndicator.remove();
+                this.typingIndicator = null;
+            }
+        }
+        
+        scrollToBottom() {
+            if (this.messagesContainer) {
+                this.messagesContainer.stop().animate({
+                    scrollTop: this.messagesContainer[0].scrollHeight
+                }, 300);
+            }
+        }
+        
+        escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    }
+    
+    // Initialize when DOM is ready
+    $(document).ready(function() {
+        new ChoyaAI();
+        
+        // Initialize embedded chats
+        $('.choya-ai-embedded').each(function() {
+            new ChoyaAIEmbedded();
+        });
+    });
+    
+    // Global Pro features object
+    window.choyaPro = {
+        initialized: false,
+        
+        init: function() {
+            if (this.initialized) return;
+            
+            this.initialized = true;
+            console.log('Choya AI Pro features initialized');
+            
+            // Initialize tracking
+            this.initTracking();
+            
+            // Initialize smart triggers
+            this.initSmartTriggers();
+        },
+        
+        initTracking: function() {
+            // Page view tracking
+            this.trackEvent('page_view', {
+                page_url: window.location.href,
+                page_title: document.title,
+                referrer: document.referrer
+            });
+        },
+        
+        initSmartTriggers: function() {
+            // Time-based trigger
+            setTimeout(() => {
+                if (typeof choyaAI !== 'undefined' && !choyaAI.isOpen) {
+                    this.triggerSmartHelp('time_based');
+                }
+            }, 30000); // 30 seconds
+            
+            // Scroll-based trigger
+            $(window).on('scroll', () => {
+                const scrollPercent = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
+                
+                if (scrollPercent > 70 && !this.scrollTriggerFired) {
+                    this.scrollTriggerFired = true;
+                    this.triggerSmartHelp('scroll_based');
+                }
+            });
+        },
+        
+        triggerSmartHelp: function(type) {
+            // Show smart help suggestion
+            const suggestions = {
+                'time_based': "Need help with this content? I can explain it in simpler terms or answer your questions!",
+                'scroll_based': "You've scrolled quite far! Need clarification on any of this content?",
+                'exit_intent': "Wait! Before you go, can I help you with anything specific?"
+            };
+            
+            if (typeof choyaAI !== 'undefined') {
+                // This would show a smart trigger notification
+                console.log('Smart trigger:', type, suggestions[type]);
+            }
+        },
+        
+        trackEvent: function(event, data) {
+            // Track events for analytics
+            if (typeof gtag !== 'undefined') {
+                gtag('event', event, data);
+            }
+            
+            // Send to our analytics endpoint
+            $.ajax({
+                url: choya_frontend.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'choya_track_event',
+                    event: event,
+                    data: JSON.stringify(data),
+                    nonce: choya_frontend.nonce
+                }
+            });
+        }
+    };
+    
+})(jQuery);

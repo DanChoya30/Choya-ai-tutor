@@ -1,0 +1,389 @@
+<?php
+/**
+ * Choya AI Licensing System
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class Choya_AI_Licensing {
+    
+    private $license_server_url = 'https://choya.ai/api/v1';
+    private $api_timeout = 15;
+    private $check_interval = 86400; // 24 hours in seconds
+    
+    public function __construct() {
+        add_action('admin_init', array($this, 'init_license_system'));
+        add_action('choya_ai_hourly_event', array($this, 'check_license_status'));
+        add_action('admin_menu', array($this, 'add_license_page'));
+        
+        // AJAX handlers
+        add_action('wp_ajax_choya_activate_license', array($this, 'ajax_activate_license'));
+        add_action('wp_ajax_choya_deactivate_license', array($this, 'ajax_deactivate_license'));
+        add_action('wp_ajax_choya_check_license', array($this, 'ajax_check_license'));
+    }
+    
+    public function init_license_system() {
+        // Schedule license checks
+        if (!wp_next_scheduled('choya_license_check_event')) {
+            wp_schedule_event(time(), 'daily', 'choya_license_check_event');
+        }
+        
+        // Check license status on admin pages
+        if (is_admin()) {
+            $this->check_license_status();
+        }
+    }
+    
+    public function ajax_activate_license() {
+        check_ajax_referer('choya_admin_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized'));
+        }
+        
+        $email = sanitize_email($_POST['license_email']);
+        $license_key = sanitize_text_field($_POST['license_key']);
+        
+        $validation_result = $this->activate_license($email, $license_key);
+        
+        if ($validation_result['success']) {
+            wp_send_json_success(array(
+                'message' => 'Pro license activated successfully!',
+                'expiry_date' => $validation_result['expiry_date']
+            ));
+        } else {
+            wp_send_json_error(array('message' => $validation_result['error']));
+        }
+    }
+    
+    public function ajax_deactivate_license() {
+        check_ajax_referer('choya_admin_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized'));
+        }
+        
+        $result = $this->deactivate_license();
+        
+        if ($result) {
+            wp_send_json_success(array('message' => 'License deactivated successfully'));
+        } else {
+            wp_send_json_error(array('message' => 'Failed to deactivate license'));
+        }
+    }
+    
+    public function ajax_check_license() {
+        check_ajax_referer('choya_admin_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized'));
+        }
+        
+        $result = $this->check_license_validity();
+        
+        if ($result['valid']) {
+            wp_send_json_success(array(
+                'message' => 'License is valid',
+                'status' => $result['status'],
+                'expiry_date' => $result['expiry_date']
+            ));
+        } else {
+            wp_send_json_error(array(
+                'message' => $result['error'],
+                'status' => $result['status']
+            ));
+        }
+    }
+    
+    public function activate_license($email, $license_key) {
+        // Validate input
+        if (empty($email) || empty($license_key)) {
+            return array(
+                'success' => false,
+                'error' => 'Please provide both email and license key'
+            );
+        }
+        
+        if (!is_email($email)) {
+            return array(
+                'success' => false,
+                'error' => 'Please enter a valid email address'
+            );
+        }
+        
+        // Check for existing active license
+        $current_status = get_option('choya_ai_license_status', 'inactive');
+        if ($current_status === 'active') {
+            return array(
+                'success' => false,
+                'error' => 'A license is already active. Please deactivate it first.'
+            );
+        }
+        
+        // Validate license with remote server
+        $validation_result = $this->validate_license_with_server($email, $license_key);
+        
+        if ($validation_result['success']) {
+            // Store license information
+            update_option('choya_ai_is_pro', '1');
+            update_option('choya_ai_license_key', $license_key);
+            update_option('choya_ai_license_email', $email);
+            update_option('choya_ai_license_status', 'active');
+            update_option('choya_ai_license_expiry', $validation_result['expiry_date']);
+            update_option('choya_ai_license_activated', current_time('mysql'));
+            
+            // Store license metadata
+            update_option('choya_ai_license_metadata', array(
+                'activation_date' => current_time('mysql'),
+                'expiry_date' => $validation_result['expiry_date'],
+                'domain' => get_site_url(),
+                'version' => CHOYA_AI_VERSION,
+                'license_key_hash' => md5($license_key)
+            ));
+            
+            // Schedule next check
+            if (!wp_next_scheduled('choya_license_check_event')) {
+                wp_schedule_event(time() + $this->check_interval, 'daily', 'choya_license_check_event');
+            }
+            
+            return array(
+                'success' => true,
+                'expiry_date' => $validation_result['expiry_date']
+            );
+        } else {
+            return array(
+                'success' => false,
+                'error' => $validation_result['error']
+            );
+        }
+    }
+    
+    public function deactivate_license() {
+        // Clear license data
+        update_option('choya_ai_is_pro', '0');
+        update_option('choya_ai_license_key', '');
+        update_option('choya_ai_license_email', '');
+        update_option('choya_ai_license_status', 'inactive');
+        update_option('choya_ai_license_expiry', '');
+        update_option('choya_ai_license_activated', '');
+        update_option('choya_ai_license_metadata', '');
+        
+        // Clear scheduled event
+        wp_clear_scheduled_hook('choya_license_check_event');
+        
+        return true;
+    }
+    
+    public function check_license_status() {
+        $is_pro = get_option('choya_ai_is_pro', '0');
+        $license_status = get_option('choya_ai_license_status', 'inactive');
+        $license_expiry = get_option('choya_ai_license_expiry', '');
+        
+        if ($is_pro === '1' && $license_status === 'active') {
+            // Check if license has expired
+            if (!empty($license_expiry)) {
+                $expiry_date = new DateTime($license_expiry);
+                $today = new DateTime();
+                
+                if ($today > $expiry_date) {
+                    update_option('choya_ai_is_pro', '0');
+                    update_option('choya_ai_license_status', 'expired');
+                    
+                    // Add admin notice
+                    add_action('admin_notices', array($this, 'show_license_expired_notice'));
+                    return;
+                }
+            }
+            
+            // Check license validity with server
+            $validation_result = $this->check_license_validity();
+            
+            if (!$validation_result['valid']) {
+                update_option('choya_ai_is_pro', '0');
+                update_option('choya_ai_license_status', 'invalid');
+                
+                add_action('admin_notices', array($this, 'show_license_invalid_notice'));
+            }
+        }
+    }
+    
+    public function check_license_validity() {
+        $license_key = get_option('choya_ai_license_key', '');
+        $license_email = get_option('choya_ai_license_email', '');
+        
+        if (empty($license_key) || empty($license_email)) {
+            return array(
+                'valid' => false,
+                'status' => 'inactive',
+                'error' => 'No license information found'
+            );
+        }
+        
+        $validation_result = $this->validate_license_with_server($license_email, $license_key, true);
+        
+        return $validation_result;
+    }
+    
+    private function validate_license_with_server($email, $license_key, $silent = false) {
+        $api_url = $this->license_server_url . '/validate-license';
+        
+        $request_data = array(
+            'email' => $email,
+            'license_key' => $license_key,
+            'domain' => get_site_url(),
+            'version' => CHOYA_AI_VERSION,
+            'silent' => $silent ? 1 : 0
+        );
+        
+        $response = wp_remote_post($api_url, array(
+            'body' => $request_data,
+            'timeout' => $this->api_timeout,
+            'sslverify' => true,
+            'user-agent' => 'Choya AI/' . CHOYA_AI_VERSION
+        ));
+        
+        if (is_wp_error($response)) {
+            return array(
+                'success' => false,
+                'error' => 'Could not connect to licensing server: ' . $response->get_error_message()
+            );
+        }
+        
+        $response_code = wp_remote_retrieve_response_code($response);
+        $response_body = wp_remote_retrieve_body($response);
+        
+        if ($response_code === 200) {
+            $data = json_decode($response_body, true);
+            
+            if ($data['valid']) {
+                return array(
+                    'success' => true,
+                    'valid' => true,
+                    'status' => 'active',
+                    'expiry_date' => $data['expiry_date'],
+                    'features' => $data['features'] ?? array()
+                );
+            } else {
+                return array(
+                    'success' => false,
+                    'valid' => false,
+                    'status' => $data['status'] ?? 'invalid',
+                    'error' => $data['error'] ?: 'Invalid license key'
+                );
+            }
+        }
+        
+        return array(
+            'success' => false,
+            'valid' => false,
+            'status' => 'error',
+            'error' => 'License validation service unavailable (HTTP ' . $response_code . ')'
+        );
+    }
+    
+    public function show_license_expired_notice() {
+        echo '<div class="notice notice-warning is-dismissible">';
+        echo '<p><strong>⚠️ Choya AI Pro License Expired!</strong> Your Pro features have been disabled. <a href="' . admin_url('admin.php?page=choya-ai-settings&tab=pro') . '">Renew your license</a> to continue using Pro features.</p>';
+        echo '</div>';
+    }
+    
+    public function show_license_invalid_notice() {
+        echo '<div class="notice notice-error is-dismissible">';
+        echo '<p><strong>❌ Choya AI Pro License Invalid!</strong> Your license could not be validated. Please <a href="' . admin_url('admin.php?page=choya-ai-settings&tab=pro') . '">reactivate your license</a> or contact support.</p>';
+        echo '</div>';
+    }
+    
+    public function add_license_page() {
+        // Add license submenu
+        add_submenu_page(
+            'choya-ai-settings',
+            'License Management',
+            '🔑 License',
+            'manage_options',
+            'choya-ai-license',
+            array($this, 'render_license_page')
+        );
+    }
+    
+    public function render_license_page() {
+        $is_pro = get_option('choya_ai_is_pro', '0');
+        $license_status = get_option('choya_ai_license_status', 'inactive');
+        $license_expiry = get_option('choya_ai_license_expiry', '');
+        $license_activated = get_option('choya_ai_license_activated', '');
+        
+        echo '<div class="wrap">';
+        echo '<h1>🔑 Choya AI License Management</h1>';
+        
+        if (isset($_GET['settings-updated']) && $_GET['settings-updated'] == 'true') {
+            echo '<div class="notice notice-success is-dismissible"><p>Settings saved successfully!</p></div>';
+        }
+        
+        // License status section
+        echo '<div class="choya-license-status-section">';
+        echo '<h2>License Status</h2>';
+        
+        if ($is_pro === '1' && $license_status === 'active') {
+            echo '<div class="license-status active">';
+            echo '<h3>✅ Active License</h3>';
+            echo '<p><strong>Status:</strong> Active</p>';
+            if (!empty($license_activated)) {
+                echo '<p><strong>Activated:</strong> ' . $license_activated . '</p>';
+            }
+            if (!empty($license_expiry)) {
+                $days_left = ceil((strtotime($license_expiry) - time()) / 86400);
+                echo '<p><strong>Expires:</strong> ' . $license_expiry . ' (' . $days_left . ' days remaining)</p>';
+            }
+            echo '<form method="post" style="margin-top: 20px;">';
+            echo '<input type="hidden" name="action" value="choya_deactivate_license">';
+            echo '<input type="submit" class="button" value="Deactivate License" onclick="return confirm(\'Are you sure you want to deactivate your license?\');">';
+            echo '</form>';
+            echo '</div>';
+        } elseif ($license_status === 'expired') {
+            echo '<div class="license-status expired">';
+            echo '<h3>⏰ License Expired</h3>';
+            echo '<p>Your license has expired. Please renew to continue using Pro features.</p>';
+            echo '<a href="https://choya.ai/pricing" target="_blank" class="button">Renew License</a>';
+            echo '</div>';
+        } elseif ($license_status === 'invalid') {
+            echo '<div class="license-status invalid">';
+            echo '<h3>❌ Invalid License</h3>';
+            echo '<p>Your license could not be validated. Please reactivate or contact support.</p>';
+            echo '<a href="' . admin_url('admin.php?page=choya-ai-settings&tab=pro') . '" class="button">Reactivate License</a>';
+            echo '</div>';
+        } else {
+            echo '<div class="license-status inactive">';
+            echo '<h3>🔌 No Active License</h3>';
+            echo '<p>No Pro license is currently active on this site.</p>';
+            echo '<a href="https://choya.ai/pricing" target="_blank" class="button">Get Pro License</a>';
+            echo '</div>';
+        }
+        
+        echo '</div>';
+        
+        // License activation form
+        echo '<div class="choya-license-activation">';
+        echo '<h2>Activate License</h2>';
+        echo '<p>Enter your license key to activate Pro features:</p>';
+        
+        echo '<form id="choya-license-activation-form">';
+        echo '<table class="form-table">';
+        echo '<tr>';
+        echo '<th scope="row">Email Address</th>';
+        echo '<td><input type="email" name="license_email" style="width: 300px;" required placeholder="your@email.com"></td>';
+        echo '</tr>';
+        echo '<tr>';
+        echo '<th scope="row">License Key</th>';
+        echo '<td><input type="text" name="license_key" style="width: 300px;" required placeholder="XXXX-XXXX-XXXX-XXXX">';
+        echo '<p class="description">Get your license key from <a href="https://choya.ai/account" target="_blank">your account</a></p></td>';
+        echo '</tr>';
+        echo '</table>';
+        echo '<p><input type="submit" class="button-primary" value="Activate License">';
+        echo ' <a href="https://choya.ai/pricing" target="_blank" class="button">Buy License</a></p>';
+        echo '</form>';
+        echo '</div>';
+        
+        echo '</div>';
+    }
+}

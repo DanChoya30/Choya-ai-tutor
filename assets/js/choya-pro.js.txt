@@ -1,0 +1,403 @@
+/**
+ * Choya AI Pro Features JavaScript
+ */
+
+(function($) {
+    'use strict';
+    
+    window.choyaPro = {
+        initialized: false,
+        analyticsEvents: [],
+        
+        init: function() {
+            if (this.initialized) return;
+            
+            this.initialized = true;
+            console.log('Choya AI Pro features initialized');
+            
+            this.initTracking();
+            this.initSmartTriggers();
+            this.initVoiceFeatures();
+            this.initMultiLanguage();
+            this.bindEventListeners();
+        },
+        
+        initTracking: function() {
+            // Page view tracking
+            this.trackEvent('page_view', {
+                page_url: window.location.href,
+                page_title: document.title,
+                referrer: document.referrer,
+                user_agent: navigator.userAgent,
+                timestamp: new Date().toISOString()
+            });
+            
+            // Scroll tracking
+            let scrollTimeout;
+            $(window).on('scroll', () => {
+                clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(() => {
+                    const scrollPercent = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
+                    
+                    if (scrollPercent > 50 && !this.scroll50Tracked) {
+                        this.scroll50Tracked = true;
+                        this.trackEvent('scroll_reached', { percentage: 50 });
+                    }
+                    
+                    if (scrollPercent > 75 && !this.scroll75Tracked) {
+                        this.scroll75Tracked = true;
+                        this.trackEvent('scroll_reached', { percentage: 75 });
+                    }
+                }, 200);
+            });
+            
+            // Time on page tracking
+            let timeOnPage = 0;
+            setInterval(() => {
+                timeOnPage += 1;
+                
+                if (timeOnPage === 30 && !this.time30Tracked) {
+                    this.time30Tracked = true;
+                    this.trackEvent('time_on_page', { seconds: 30 });
+                }
+                
+                if (timeOnPage === 60 && !this.time60Tracked) {
+                    this.time60Tracked = true;
+                    this.trackEvent('time_on_page', { seconds: 60 });
+                }
+            }, 1000);
+        },
+        
+        initSmartTriggers: function() {
+            // Behavioral triggers
+            this.initBehavioralTriggers();
+            
+            // Exit intent
+            this.initExitIntent();
+            
+            // Time-based triggers
+            this.initTimeBasedTriggers();
+        },
+        
+        initBehavioralTriggers: function() {
+            let inactiveTime = 0;
+            const maxInactiveTime = 15000; // 15 seconds
+            
+            const checkActivity = () => {
+                inactiveTime += 1000;
+                
+                if (inactiveTime >= maxInactiveTime && !this.confusionTriggerShown) {
+                    this.confusionTriggerShown = true;
+                    this.showSmartNotification("🤔 Having trouble? I can help explain this content in simpler terms!");
+                }
+            };
+            
+            // Reset timer on user activity
+            $(document).on('mousemove keypress scroll click', () => {
+                inactiveTime = 0;
+            });
+            
+            setInterval(checkActivity, 1000);
+        },
+        
+        initExitIntent: function() {
+            $(document).on('mouseleave', (e) => {
+                if (e.clientY <= 0 && !this.exitIntentTriggerShown) {
+                    this.exitIntentTriggerShown = true;
+                    this.showSmartNotification("👋 Wait! Can I help you find what you're looking for before you go?");
+                }
+            });
+        },
+        
+        initTimeBasedTriggers: function() {
+            setTimeout(() => {
+                if (!this.timeBasedTriggerShown) {
+                    this.timeBasedTriggerShown = true;
+                    this.showSmartNotification("💡 Need help understanding this topic? I can provide examples or answer your questions!");
+                }
+            }, 45000); // 45 seconds
+        },
+        
+        showSmartNotification: function(message) {
+            if ($('#choya-smart-notification').length === 0) {
+                const notification = $('<div id="choya-smart-notification" class="choya-smart-notification">' + 
+                    '<div class="choya-smart-message">' + message + '</div>' +
+                    '<button class="choya-smart-open">💬 Open Chat</button>' +
+                    '<button class="choya-smart-close">×</button>' +
+                    '</div>');
+                
+                $('body').append(notification);
+                
+                notification.find('.choya-smart-open').on('click', () => {
+                    if (typeof choyaAI !== 'undefined') {
+                        choyaAI.openChat();
+                    }
+                    notification.fadeOut(300);
+                });
+                
+                notification.find('.choya-smart-close').on('click', () => {
+                    notification.fadeOut(300);
+                });
+                
+                setTimeout(() => {
+                    if ($('#choya-smart-notification').is(':visible')) {
+                        notification.fadeOut(300);
+                    }
+                }, 15000);
+            }
+        },
+        
+        initVoiceFeatures: function() {
+            if (!('SpeechRecognition' in window) && !('webkitSpeechRecognition' in window)) {
+                return;
+            }
+            
+            // Voice input button for chat
+            $('.choya-ai-input-container').append('<button class="choya-voice-button" title="Voice Input">🎤</button>');
+            
+            $('.choya-ai-input-container').on('click', '.choya-voice-button', function() {
+                window.choyaPro.startVoiceInput();
+            });
+        },
+        
+        startVoiceInput: function() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            
+            const inputField = $('#choya-ai-input');
+            const originalPlaceholder = inputField.attr('placeholder');
+            
+            inputField.attr('placeholder', 'Listening...');
+            inputField.prop('disabled', true);
+            
+            recognition.lang = 'en-US';
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+            
+            recognition.start();
+            
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                inputField.val(transcript);
+                inputField.attr('placeholder', originalPlaceholder);
+                inputField.prop('disabled', false);
+                inputField.focus();
+                
+                // Auto-send if short message
+                if (transcript.length < 50) {
+                    setTimeout(() => {
+                        $('#choya-ai-send.active').click();
+                    }, 1000);
+                }
+            };
+            
+            recognition.onerror = (event) => {
+                console.error('Voice recognition error:', event.error);
+                inputField.attr('placeholder', originalPlaceholder);
+                inputField.prop('disabled', false);
+            };
+            
+            recognition.onend = () => {
+                inputField.attr('placeholder', originalPlaceholder);
+                inputField.prop('disabled', false);
+            };
+        },
+        
+        initMultiLanguage: function() {
+            // Add language switcher to chat header (if enabled)
+            if (get_option('choya_ai_auto_translation', '0') === '1') {
+                const languageSwitcher = '<select class="choya-language-switcher" title="Select Language">' +
+                    '<option value="auto">Auto-Detect</option>' +
+                    '<option value="en">English</option>' +
+                    '<option value="es">Español</option>' +
+                    '<option value="fr">Français</option>' +
+                    '<option value="de">Deutsch</option>' +
+                    '<option value="it">Italiano</option>' +
+                    '</select>';
+                
+                $('.choya-ai-header').append(languageSwitcher);
+                
+                $('.choya-ai-header').on('change', '.choya-language-switcher', function() {
+                    const language = $(this).val();
+                    window.choyaPro.setLanguage(language);
+                });
+            }
+        },
+        
+        setLanguage: function(language) {
+            this.trackEvent('language_changed', { language: language });
+            
+            // Store preferred language
+            localStorage.setItem('choya_ai_language', language);
+            
+            // Reload page or update content
+            if (language !== 'auto') {
+                this.translatePage(language);
+            }
+        },
+        
+        translatePage: function(language) {
+            // This would integrate with a translation API
+            console.log('Translating page to:', language);
+            
+            // Show translation progress
+            $('body').append('<div id="choya-translation-progress">🔄 Translating...</div>');
+            
+            setTimeout(() => {
+                $('#choya-translation-progress').fadeOut(500, function() {
+                    $(this).remove();
+                });
+            }, 2000);
+        },
+        
+        initContentEnhancement: function() {
+            // Add enhancement buttons to content
+            $('.choya-content-enhancement').each(function() {
+                const contentId = $(this).data('content-id');
+                
+                $(this).find('.choya-explain-button').on('click', function() {
+                    window.choyaPro.explainContent(contentId);
+                });
+                
+                $(this).find('.choya-quiz-button').on('click', function() {
+                    window.choyaPro.generateQuiz(contentId);
+                });
+                
+                $(this).find('.choya-summarize-button').on('click', function() {
+                    window.choyaPro.summarizeContent(contentId);
+                });
+            });
+        },
+        
+        explainContent: function(contentId) {
+            this.trackEvent('content_explained', { content_id: contentId });
+            
+            if (typeof choyaAI !== 'undefined') {
+                choyaAI.openChat();
+                setTimeout(() => {
+                    $('#choya-ai-input').val('Please explain this content in simpler terms: ' + contentId).trigger('input');
+                }, 500);
+            }
+        },
+        
+        generateQuiz: function(contentId) {
+            this.trackEvent('quiz_generated', { content_id: contentId });
+            
+            // Show quiz interface
+            const quizHtml = '<div class="choya-content-quiz">' +
+                '<h3>📝 Test Your Knowledge</h3>' +
+                '<p>Based on the content, here\'s a quiz to test your understanding:</p>' +
+                '<div class="choya-quiz-questions">' +
+                '<div class="choya-quiz-question">' +
+                '<p>What is the main concept discussed in this content?</p>' +
+                '<input type="text" class="choya-quiz-answer" placeholder="Your answer...">' +
+                '</div>' +
+                '</div>' +
+                '<button class="choya-quiz-submit">Check Answers</button>' +
+                '</div>';
+            
+            $('body').append(quizHtml);
+        },
+        
+        summarizeContent: function(contentId) {
+            this.trackEvent('content_summarized', { content_id: contentId });
+            
+            if (typeof choyaAI !== 'undefined') {
+                choyaAI.openChat();
+                setTimeout(() => {
+                    $('#choya-ai-input').val('Please summarize the key points of this content: ' + contentId).trigger('input');
+                }, 500);
+            }
+        },
+        
+        trackEvent: function(event, data) {
+            // Add to queue for batch processing
+            this.analyticsEvents.push({
+                event: event,
+                data: data,
+                timestamp: new Date().toISOString()
+            });
+            
+            // Send immediately for important events
+            const immediateEvents = ['chat_opened', 'lead_captured', 'conversion'];
+            
+            if (immediateEvents.includes(event)) {
+                this.sendAnalyticsEvent(event, data);
+            }
+            
+            // Send batch every 10 events or 30 seconds
+            if (this.analyticsEvents.length >= 10) {
+                this.sendAnalyticsBatch();
+            }
+        },
+        
+        sendAnalyticsEvent: function(event, data) {
+            if (typeof choya_frontend !== 'undefined') {
+                $.ajax({
+                    url: choya_frontend.ajax_url,
+                    type: 'POST',
+                    data: {
+                        action: 'choya_track_event',
+                        event: event,
+                        data: JSON.stringify(data),
+                        nonce: choya_frontend.nonce
+                    },
+                    success: function(response) {
+                        console.log('Analytics event tracked:', event);
+                    },
+                    error: function() {
+                        console.warn('Failed to track analytics event:', event);
+                    }
+                });
+            }
+        },
+        
+        sendAnalyticsBatch: function() {
+            if (this.analyticsEvents.length === 0) return;
+            
+            const batch = this.analyticsEvents.splice(0);
+            
+            if (typeof choya_frontend !== 'undefined') {
+                $.ajax({
+                    url: choya_frontend.ajax_url,
+                    type: 'POST',
+                    data: {
+                        action: 'choya_track_event_batch',
+                        events: JSON.stringify(batch),
+                        nonce: choya_frontend.nonce
+                    },
+                    success: function(response) {
+                        console.log('Analytics batch sent:', batch.length, 'events');
+                    },
+                    error: function() {
+                        console.warn('Failed to send analytics batch');
+                    }
+                });
+            }
+        },
+        
+        bindEventListeners: function() {
+            // Save events before page unload
+            $(window).on('beforeunload', () => {
+                if (this.analyticsEvents.length > 0) {
+                    this.sendAnalyticsBatch();
+                }
+            });
+            
+            // Process events every 30 seconds
+            setInterval(() => {
+                if (this.analyticsEvents.length > 0) {
+                    this.sendAnalyticsBatch();
+                }
+            }, 30000);
+        }
+    };
+    
+    // Initialize when document is ready
+    $(document).ready(function() {
+        if (typeof choya_frontend !== 'undefined' && choya_frontend.is_pro === '1') {
+            window.choyaPro.init();
+        }
+    });
+    
+})(jQuery);

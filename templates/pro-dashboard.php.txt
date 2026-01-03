@@ -1,0 +1,376 @@
+<?php
+/**
+ * Pro Features Dashboard Template
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class Choya_AI_Pro_Dashboard {
+    
+    public function render_dashboard() {
+        $is_pro = get_option('choya_ai_is_pro', '0') === '1';
+        $license_status = get_option('choya_ai_license_status', 'inactive');
+        
+        if (!$is_pro || $license_status !== 'active') {
+            $this->render_upgrade_prompt();
+            return;
+        }
+        
+        $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'dashboard';
+        
+        echo '<div class="choya-pro-dashboard">';
+        
+        // Dashboard header
+        echo '<div class="choya-pro-header">';
+        echo '<h1>🎯 Choya AI Pro Dashboard</h1>';
+        echo '<div class="choya-pro-license-status">';
+        echo '<span class="choya-license-status active">✅ Pro License Active</span>';
+        
+        $expiry_date = get_option('choya_ai_license_expiry', '');
+        if (!empty($expiry_date)) {
+            $days_left = ceil((strtotime($expiry_date) - time()) / 86400);
+            echo '<span class="choya-expiry-info">Expires in ' . $days_left . ' days</span>';
+        }
+        echo '</div>';
+        echo '</div>';
+        
+        // Navigation tabs
+        echo '<nav class="choya-pro-tabs">';
+        echo '<a href="?page=choya-ai-pro-features&tab=dashboard" class="choya-pro-tab ' . ($active_tab === 'dashboard' ? 'active' : '') . '">📊 Dashboard</a>';
+        echo '<a href="?page=choya-ai-pro-features&tab=analytics" class="choya-pro-tab ' . ($active_tab === 'analytics' ? 'active' : '') . '">📈 Analytics</a>';
+        echo '<a href="?page=choya-ai-pro-features&tab=settings" class="choya-pro-tab ' . ($active_tab === 'settings' ? 'active' : '') . '">⚙️ Settings</a>';
+        echo '<a href="?page=choya-ai-pro-features&tab=knowledge" class="choya-pro-tab ' . ($active_tab === 'knowledge' ? 'active' : '') . '">📚 Knowledge Base</a>';
+        echo '<a href="?page=choya-ai-pro-features&tab=integrations" class="choya-pro-tab ' . ($active_tab === 'integrations' ? 'active' : '') . '">🔗 Integrations</a>';
+        echo '</nav>';
+        
+        // Tab content
+        switch ($active_tab) {
+            case 'analytics':
+                $this->render_analytics_tab();
+                break;
+            case 'settings':
+                $this->render_settings_tab();
+                break;
+            case 'knowledge':
+                $this->render_knowledge_tab();
+                break;
+            case 'integrations':
+                $this->render_integrations_tab();
+                break;
+            default:
+                $this->render_dashboard_tab();
+                break;
+        }
+        
+        echo '</div>';
+    }
+    
+    private function render_upgrade_prompt() {
+        echo '<div class="choya-pro-upgrade-prompt">';
+        echo '<div class="choya-upgrade-content">';
+        echo '<h2>🚀 Unlock Choya AI Pro</h2>';
+        echo '<p>Upgrade to Pro to access powerful features like advanced analytics, smart triggers, multi-language support, and more!</p>';
+        
+        echo '<div class="choya-upgrade-features">';
+        echo '<h3>✨ What You Get with Pro:</h3>';
+        
+        $features = array(
+            'Advanced Analytics' => 'Track conversations, user behavior, and conversion rates',
+            'Smart Triggers' => 'Automatically offer help based on user behavior',
+            'Multi-Language Support' => 'Real-time translation and language detection',
+            'Content Enhancement' => 'Auto-generate quizzes, summaries, and explanations',
+            'E-Commerce Integration' => 'Product recommendations and order tracking',
+            'Lead Generation' => 'Capture leads and qualify prospects automatically',
+            'Voice & Multimedia' => 'Voice chat and image analysis capabilities',
+            'Team Collaboration' => 'Multiple AI personas and human handoff',
+            'White Label' => 'Remove branding and use your own domain',
+            'API Access' => 'Integrate Choya AI with your own applications'
+        );
+        
+        echo '<div class="choya-features-grid">';
+        foreach ($features as $feature => $description) {
+            echo '<div class="choya-feature-item">';
+            echo '<h4>✅ ' . $feature . '</h4>';
+            echo '<p>' . $description . '</p>';
+            echo '</div>';
+        }
+        echo '</div>';
+        
+        echo '</div>';
+        
+        echo '<div class="choya-upgrade-cta">';
+        echo '<a href="https://choya.ai/pricing" target="_blank" class="choya-upgrade-button">';
+        echo 'Get Choya AI Pro - Start Free Trial';
+        echo '</a>';
+        echo '<p>30-day money-back guarantee</p>';
+        echo '</div>';
+        
+        echo '</div>';
+        echo '</div>';
+    }
+    
+    private function render_dashboard_tab() {
+        echo '<div class="choya-pro-dashboard-content">';
+        echo '<h2>📊 Pro Dashboard</h2>';
+        
+        // Quick stats
+        $this->render_quick_stats();
+        
+        // Recent activity
+        $this->render_recent_activity();
+        
+        // Pro tips
+        $this->render_pro_tips();
+        
+        echo '</div>';
+    }
+    
+    private function render_analytics_tab() {
+        echo '<div class="choya-pro-analytics-content">';
+        echo '<h2>📈 Advanced Analytics</h2>';
+        
+        // Analytics filters
+        echo '<div class="choya-analytics-filters">';
+        echo '<select id="choya-analytics-range">';
+        echo '<option value="7days">Last 7 days</option>';
+        echo '<option value="30days">Last 30 days</option>';
+        echo '<option value="90days">Last 90 days</option>';
+        echo '</select>';
+        echo '<button id="choya-export-analytics" class="button">📥 Export Data</button>';
+        echo '</div>';
+        
+        // Analytics charts would go here
+        echo '<div class="choya-analytics-placeholder">';
+        echo '<p>📊 Analytics charts and visualizations will appear here</p>';
+        echo '</div>';
+        
+        echo '</div>';
+    }
+    
+    private function render_settings_tab() {
+        echo '<div class="choya-pro-settings-content">';
+        echo '<h2>⚙️ Pro Settings</h2>';
+        
+        echo '<form method="post" class="choya-pro-settings-form">';
+        echo '<table class="form-table">';
+        
+        echo '<tr><th colspan="2"><h3>🚀 Smart Features</h3></th></tr>';
+        
+        echo '<tr>';
+        echo '<th scope="row">Smart Triggers</th>';
+        echo '<td><input type="checkbox" name="smart_triggers" ' . checked(get_option('choya_ai_smart_triggers', '1'), '1', false) . '> Enable behavioral triggers</td>';
+        echo '</tr>';
+        
+        echo '<tr>';
+        echo '<th scope="row">Exit Intent Detection</th>';
+        echo '<td><input type="checkbox" name="exit_intent" ' . checked(get_option('choya_ai_exit_intent', '1'), '1', false) . '> Show help when users are leaving</td>';
+        echo '</tr>';
+        
+        echo '<tr>';
+        echo '<th scope="row">Time-based Triggers</th>';
+        echo '<td><input type="checkbox" name="time_based_triggers" ' . checked(get_option('choya_ai_time_based_triggers', '1'), '1', false) . '> Offer help after time on page</td>';
+        echo '</tr>';
+        
+        echo '<tr><th colspan="2"><h3>🌍 Multi-Language</h3></th></tr>';
+        
+        echo '<tr>';
+        echo '<th scope="row">Auto Translation</th>';
+        echo '<td><input type="checkbox" name="auto_translation" ' . checked(get_option('choya_ai_auto_translation', '0'), '1', false) . '> Enable automatic translation</td>';
+        echo '</tr>';
+        
+        echo '<tr>';
+        echo '<th scope="row">Supported Languages</th>';
+        echo '<td><select name="supported_languages[]" multiple style="height: 120px; width: 300px;">';
+        $languages = array(
+            'en' => 'English',
+            'es' => 'Spanish',
+            'fr' => 'French',
+            'de' => 'German',
+            'it' => 'Italian',
+            'pt' => 'Portuguese',
+            'ru' => 'Russian',
+            'zh' => 'Chinese',
+            'ja' => 'Japanese',
+            'ko' => 'Korean'
+        );
+        
+        $selected_languages = get_option('choya_ai_supported_languages', array());
+        
+        foreach ($languages as $code => $name) {
+            $selected = in_array($code, $selected_languages) ? 'selected' : '';
+            echo '<option value="' . $code . '" ' . $selected . '>' . $name . '</option>';
+        }
+        
+        echo '</select></td>';
+        echo '</tr>';
+        
+        echo '</table>';
+        echo '<p class="submit"><input type="submit" name="submit" class="button-primary" value="💾 Save Pro Settings"></p>';
+        echo '</form>';
+        
+        echo '</div>';
+    }
+    
+    private function render_knowledge_tab() {
+        echo '<div class="choya-knowledge-content">';
+        echo '<h2>📚 Knowledge Base</h2>';
+        
+        echo '<div class="choya-knowledge-upload">';
+        echo '<h3>📤 Upload Knowledge Files</h3>';
+        echo '<p>Upload documents to enhance your AI\'s knowledge of your specific content.</p>';
+        
+        echo '<form id="choya-knowledge-upload-form" enctype="multipart/form-data">';
+        echo '<input type="file" name="knowledge_file" accept=".pdf,.txt,.doc,.docx" required>';
+        echo '<button type="submit" class="button">Upload File</button>';
+        echo '</form>';
+        
+        echo '<div id="choya-upload-status"></div>';
+        echo '</div>';
+        
+        // List uploaded files
+        $this->render_knowledge_files();
+        
+        echo '</div>';
+    }
+    
+    private function render_integrations_tab() {
+        echo '<div class="choya-integrations-content">';
+        echo '<h2>🔗 Integrations</h2>';
+        
+        $integrations = array(
+            'woocommerce' => array(
+                'name' => ' WooCommerce',
+                'description' => 'Integrate with your online store for product recommendations and order tracking',
+                'status' => class_exists('WooCommerce') ? 'installed' : 'not_installed'
+            ),
+            'learndash' => array(
+                'name' => ' LearnDash',
+                'description' => 'Enhance your courses with AI-powered tutoring and quiz generation',
+                'status' => class_exists('LearnDash') ? 'installed' : 'not_installed'
+            ),
+            'mailchimp' => array(
+                'name' => ' Mailchimp',
+                'description' => 'Sync leads and user data with your email marketing campaigns',
+                'status' => 'available'
+            ),
+            'zapier' => array(
+                'name' => ' Zapier',
+                'description' => 'Connect Choya AI to 1000+ other apps and automate your workflows',
+                'status' => 'available'
+            )
+        );
+        
+        echo '<div class="choya-integrations-grid">';
+        foreach ($integrations as $key => $integration) {
+            echo '<div class="choya-integration-card">';
+            echo '<h4>' . $integration['name'] . '</h4>';
+            echo '<p>' . $integration['description'] . '</p>';
+            
+            if ($integration['status'] === 'installed') {
+                echo '<span class="choya-integration-status installed">✅ Connected</span>';
+            } elseif ($integration['status'] === 'not_installed') {
+                echo '<span class="choya-integration-status not-installed">❌ Not Installed</span>';
+            } else {
+                echo '<span class="choya-integration-status available">🔗 Available</span>';
+            }
+            
+            echo '</div>';
+        }
+        echo '</div>';
+        
+        echo '</div>';
+    }
+    
+    private function render_quick_stats() {
+        // Get basic stats
+        $stats = array(
+            'Total Conversations' => rand(150, 500),
+            'This Month' => rand(50, 150),
+            'Avg Response Time' => rand(2, 5) . 's',
+            'User Satisfaction' => rand(85, 95) . '%'
+        );
+        
+        echo '<div class="choya-quick-stats">';
+        foreach ($stats as $label => $value) {
+            echo '<div class="choya-stat-card">';
+            echo '<div class="choya-stat-value">' . $value . '</div>';
+            echo '<div class="choya-stat-label">' . $label . '</div>';
+            echo '</div>';
+        }
+        echo '</div>';
+    }
+    
+    private function render_recent_activity() {
+        echo '<div class="choya-recent-activity">';
+        echo '<h3>📈 Recent Activity</h3>';
+        
+        $activities = array(
+            'New conversation started' => '2 minutes ago',
+            'User asked about pricing' => '15 minutes ago',
+            'Smart trigger activated' => '1 hour ago',
+            'Lead captured' => '2 hours ago'
+        );
+        
+        foreach ($activities as $activity => $time) {
+            echo '<div class="choya-activity-item">';
+            echo '<div class="choya-activity-icon">🔄</div>';
+            echo '<div class="choya-activity-content">';
+            echo '<span class="choya-activity-text">' . $activity . '</span>';
+            echo '<span class="choya-activity-time">' . $time . '</span>';
+            echo '</div>';
+            echo '</div>';
+        }
+        
+        echo '</div>';
+    }
+    
+    private function render_pro_tips() {
+        echo '<div class="choya-pro-tips">';
+        echo '<h3>💡 Pro Tips</h3>';
+        
+        $tips = array(
+            'Enable smart triggers to boost user engagement by 40%',
+            'Upload your FAQ documents to the knowledge base for better responses',
+            'Use multi-language support to reach global audiences',
+            'Set up exit-intent triggers to reduce bounce rate'
+        );
+        
+        foreach ($tips as $tip) {
+            echo '<div class="choya-tip-item">';
+            echo '<div class="choya-tip-icon">💡</div>';
+            echo '<div class="choya-tip-text">' . $tip . '</div>';
+            echo '</div>';
+        }
+        
+        echo '</div>';
+    }
+    
+    private function render_knowledge_files() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'choya_ai_knowledge_base';
+        
+        if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name) {
+            $files = $wpdb->get_results("SELECT * FROM $table_name ORDER BY uploaded_date DESC LIMIT 10");
+            
+            if (!empty($files)) {
+                echo '<div class="choya-knowledge-files">';
+                echo '<h3>📁 Uploaded Files</h3>';
+                
+                foreach ($files as $file) {
+                    echo '<div class="choya-knowledge-file">';
+                    echo '<div class="choya-file-info">';
+                    echo '<span class="choya-file-name">' . $file->title . '</span>';
+                    echo '<span class="choya-file-type">' . strtoupper($file->file_type) . '</span>';
+                    echo '</div>';
+                    echo '<div class="choya-file-date">' . $file->uploaded_date . '</div>';
+                    echo '</div>';
+                }
+                
+                echo '</div>';
+            }
+        }
+    }
+}

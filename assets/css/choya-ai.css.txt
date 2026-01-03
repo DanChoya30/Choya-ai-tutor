@@ -1,0 +1,423 @@
+/* Choya AI Chat Widget Styles */
+#choya-ai-container {
+    position: fixed;
+    z-index: 10000;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Position Classes */
+.choya-ai-position-bottom-right {
+    bottom: 20px;
+    right: 20px;
+}
+
+.choya-ai-position-bottom-left {
+    bottom: 20px;
+    left: 20px;
+}
+
+.choya-ai-position-top-right {
+    top: 20px;
+    right: 20px;
+}
+
+.choya-ai-position-top-left {
+    top: 20px;
+    left: 20px;
+}
+
+/* Toggle Button */
+.choya-ai-toggle {
+    position: relative;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    overflow: hidden;
+}
+
+.choya-ai-toggle:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 25px rgba(0, 0, 0, 0.2);
+}
+
+.choya-ai-icon {
+    color: white;
+    font-size: 24px;
+    z-index: 2;
+}
+
+.choya-ai-dot {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    width: 12px;
+    height: 12px;
+    background: #4CAF50;
+    border-radius: 50%;
+    border: 2px solid white;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+/* Chat Widget */
+.choya-ai-widget {
+    width: 380px;
+    height: 500px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(20px) scale(0.9); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.choya-ai-widget.active {
+    display: flex;
+}
+
+/* Header */
+.choya-ai-header {
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: relative;
+}
+
+.choya-ai-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+}
+
+.choya-ai-title {
+    font-weight: 600;
+    font-size: 16px;
+    flex: 1;
+}
+
+.choya-ai-pro-badge {
+    background: #ffd700;
+    color: #000;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-weight: bold;
+}
+
+.choya-ai-close {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background 0.2s ease;
+}
+
+.choya-ai-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Messages Container */
+.choya-ai-messages {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background: #f8f9fa;
+}
+
+.choya-ai-message {
+    display: flex;
+    margin-bottom: 16px;
+    gap: 12px;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.choya-ai-bot {
+    justify-content: flex-start;
+}
+
+.choya-ai-user {
+    justify-content: flex-end;
+}
+
+.choya-ai-avatar-small {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #e9ecef;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+}
+
+.choya-ai-bubble {
+    max-width: 80%;
+    background: white;
+    border-radius: 18px;
+    padding: 12px 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.choya-ai-bot .choya-ai-bubble {
+    background: white;
+}
+
+.choya-ai-user .choya-ai-bubble {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.choya-ai-text {
+    font-size: 14px;
+    line-height: 1.4;
+    margin: 0;
+}
+
+/* Input Container */
+.choya-ai-input-container {
+    padding: 16px 20px;
+    background: white;
+    border-top: 1px solid #e9ecef;
+    display: flex;
+    gap: 12px;
+}
+
+.choya-ai-input-container input {
+    flex: 1;
+    border: 1px solid #ddd;
+    border-radius: 25px;
+    padding: 12px 16px;
+    font-size: 14px;
+    outline: none;
+    transition: border 0.2s ease;
+    resize: none;
+}
+
+.choya-ai-input-container input:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.choya-ai-input-container input::placeholder {
+    color: #999;
+}
+
+.choya-ai-input-container button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s ease;
+    opacity: 0.6;
+}
+
+.choya-ai-input-container button:hover {
+    transform: scale(1.05);
+}
+
+.choya-ai-input-container button.active {
+    opacity: 1;
+}
+
+.choya-ai-input-container button span {
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+/* Embedded Chat Styles */
+.choya-ai-embedded {
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    background: white;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.choya-ai-embedded-header {
+    padding: 15px 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.choya-ai-embedded-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+}
+
+.choya-ai-embedded-title {
+    font-weight: 600;
+    font-size: 16px;
+    flex: 1;
+}
+
+.choya-ai-embedded-messages {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    max-height: 350px;
+}
+
+.choya-ai-embedded-input {
+    padding: 15px 20px;
+    background: white;
+    border-top: 1px solid #e9ecef;
+    display: flex;
+    gap: 12px;
+}
+
+.choya-ai-embedded-input input {
+    flex: 1;
+    border: 1px solid #ddd;
+    border-radius: 25px;
+    padding: 12px 16px;
+    font-size: 14px;
+    outline: none;
+}
+
+.choya-ai-embedded-input input:focus {
+    border-color: #667eea;
+}
+
+.choya-ai-embedded-input button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+    opacity: 0.6;
+}
+
+.choya-ai-embedded-input button.active {
+    opacity: 1;
+}
+
+/* Responsive Design */
+@media (max-width: 480px) {
+    .choya-ai-widget {
+        width: 100vw;
+        height: 100vh;
+        max-width: 100%;
+        max-height: 100%;
+        border-radius: 0;
+    }
+    
+    .choya-ai-messages {
+        padding: 16px;
+    }
+    
+    .choya-ai-message .choya-ai-bubble {
+        max-width: 85%;
+    }
+    
+    .choya-ai-input-container {
+        padding: 12px 16px;
+    }
+}
+
+/* Typing Indicator */
+.choya-ai-typing {
+    display: flex;
+    gap: 6px;
+    padding: 12px 16px;
+    align-items: center;
+}
+
+.choya-ai-typing span {
+    width: 6px;
+    height: 6px;
+    background: #6c757d;
+    border-radius: 50%;
+    display: inline-block;
+    animation: typing 1.4s ease-in-out infinite;
+}
+
+.choya-ai-typing span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.choya-ai-typing span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes typing {
+    0%, 100% { transform: translateY(0); opacity: 0.4; }
+    50% { transform: translateY(-10px); opacity: 1; }
+}
+
+/* Accessibility */
+.choya-ai-toggle:focus,
+.choya-ai-close:focus {
+    outline: 2px solid #667eea;
+    outline-offset: 2px;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

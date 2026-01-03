@@ -1,0 +1,115 @@
+<?php
+/**
+ * License Activation Template
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+function render_license_activation_form() {
+    $is_pro = get_option('choya_ai_is_pro', '0');
+    $license_status = get_option('choya_ai_license_status', 'inactive');
+    
+    if ($is_pro === '1' && $license_status === 'active') {
+        $expiry_date = get_option('choya_ai_license_expiry', '');
+        $days_left = !empty($expiry_date) ? ceil((strtotime($expiry_date) - time()) / 86400) : 0;
+        
+        echo '<div class="choya-license-active">';
+        echo '<div class="choya-license-header">';
+        echo '<h3>🎉 Pro License Active!</h3>';
+        echo '<p>Your Choya AI Pro license is active and all premium features are available.</p>';
+        echo '</div>';
+        
+        echo '<div class="choya-license-info">';
+        echo '<div class="choya-license-detail">';
+        echo '<span class="choya-license-label">Status:</span>';
+        echo '<span class="choya-license-value active">Active</span>';
+        echo '</div>';
+        
+        if (!empty($expiry_date)) {
+            echo '<div class="choya-license-detail">';
+            echo '<span class="choya-license-label">Expires:</span>';
+            echo '<span class="choya-license-value">' . date('F j, Y', strtotime($expiry_date)) . '</span>';
+            echo '</div>';
+            
+            if ($days_left > 0 && $days_left <= 30) {
+                echo '<div class="choya-license-detail">';
+                echo '<span class="choya-license-label">Warning:</span>';
+                echo '<span class="choya-license-value warning">' . $days_left . ' days remaining</span>';
+                echo '</div>';
+            }
+        }
+        
+        echo '</div>';
+        
+        echo '<div class="choya-license-actions">';
+        echo '<button class="choya-license-button choya-license-manage" onclick="window.open(\'https://choya.ai/account\', \'_blank\')">Manage License</button>';
+        echo '<button class="choya-license-button choya-license-deactivate" id="choya-deactivate-license">Deactivate License</button>';
+        echo '</div>';
+        
+        echo '</div>';
+        
+    } else {
+        echo '<div class="choya-license-inactive">';
+        echo '<div class="choya-license-header">';
+        echo '<h3>🚀 Upgrade to Choya AI Pro</h3>';
+        echo '<p>Unlock powerful AI features with our Pro version. Get started with a 7-day free trial!</p>';
+        echo '</div>';
+        
+        if ($license_status === 'expired') {
+            echo '<div class="choya-license-notice expired">';
+            echo '<p><strong>⏰ Your license has expired!</strong> Please renew to continue using Pro features.</p>';
+            echo '</div>';
+        }
+        
+        if ($license_status === 'invalid') {
+            echo '<div class="choya-license-notice invalid">';
+            echo '<p><strong>❌ License validation failed!</strong> Please check your license key and try again.</p>';
+            echo '</div>';
+        }
+        
+        echo '<div class="choya-license-form">';
+        echo '<h4>🔑 Activate Your License</h4>';
+        
+        echo '<form id="choya-license-form">';
+        echo '<div class="choya-form-group">';
+        echo '<label for="choya-license-email">Email Address</label>';
+        echo '<input type="email" id="choya-license-email" name="license_email" required placeholder="your@email.com">';
+        echo '</div>';
+        
+        echo '<div class="choya-form-group">';
+        echo '<label for="choya-license-key">License Key</label>';
+        echo '<input type="text" id="choya-license-key" name="license_key" required placeholder="XXXX-XXXX-XXXX-XXXX">';
+        echo '<p class="choya-form-help">Find your license key in your <a href="https://choya.ai/account" target="_blank">account dashboard</a></p>';
+        echo '</div>';
+        
+        echo '<div class="choya-form-actions">';
+        echo '<button type="submit" class="choya-button-primary" id="choya-activate-btn">';
+        echo '<span class="choya-button-text">🚀 Activate Pro Version</span>';
+        echo '<span class="choya-button-loading">Activating...</span>';
+        echo '</button>';
+        echo '</div>';
+        echo '</form>';
+        echo '</div>';
+        
+        echo '<div class="choya-license-cta">';
+        echo '<h4>💡 Why Go Pro?</h4>';
+        echo '<ul class="choya-pro-features-list">';
+        echo '<li>📊 Advanced Analytics & Reporting</li>';
+        echo '<li>🎯 Smart Triggers & Automation</li>';
+        echo '<li>🌍 Multi-Language Support</li>';
+        echo '<li>🛒 E-Commerce Integration</li>';
+        echo '<li>📱 Voice & Multimedia Features</li>';
+        echo '<li>👥 Team Collaboration Tools</li>';
+        echo '</ul>';
+        echo '<div class="choya-license-pricing">';
+        echo '<p><strong>Starting at $29/month</strong></p>';
+        echo '<p>✅ 7-day free trial | ✅ No credit card required | ✅ Cancel anytime</p>';
+        echo '<a href="https://choya.ai/pricing" target="_blank" class="choya-button-secondary">View Pricing Plans</a>';
+        echo '</div>';
+        echo '</div>';
+        
+        echo '</div>';
+    }
+}
